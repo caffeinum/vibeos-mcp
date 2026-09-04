@@ -33,7 +33,10 @@ machine. Per tab, in memory only, dies with the tab, revocable in the pane.
 package over real MCP stdio. It found the `want:tools` contract (the agent pairs
 after the tab and reconnects every 13 min, so an unsolicited send is not enough) and
 the ws-drops-sends-on-CLOSING trap. Against the live route, both a raw stdio client
-and `mcpt tools/call` were verified on 2026-09-04.
+and `mcpt tools/call` were verified on 2026-09-04. `live-tab.mjs` drives a real
+vibeos.sh/app tab in a headless Chrome (puppeteer-core, not shipped) to pair a
+token for a full live e2e: tab → relay → npm package → mcpt; last green 2026-09-04
+16:25 PDT on vibeos-mcp@0.1.6.
 
 ## Ownership
 
