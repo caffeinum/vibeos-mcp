@@ -46,3 +46,8 @@ e2e.mjs; nothing is fetched from vibeos-landing). `publish.yml` publishes to npm
 a `v*` tag with `--provenance`: trusted publishing (OIDC) if the npm package has a
 trusted publisher bound to `caffeinum/vibeos-mcp` + `publish.yml`, else the
 `NPM_TOKEN` secret. The tag must equal `v<package.json version>`.
+
+Published as `@caffeinum/vibeos-mcp` (the unscoped name 403s under the publish
+token, which is scoped to @caffeinum). `bin` paths must not start with `./` or npm
+rewrites them at publish. Local `npm view` may 404 fresh versions: ~/.npmrc has a
+`before=` min-release-age gate; override with `npm_config_before=` to check.
