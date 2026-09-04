@@ -59,7 +59,24 @@ let sawSchemas = null;
 let paired = false;
 let relayInstance = undefined;
 const noTab = () =>
-  `no vibeOS tab is paired with this token${relayInstance ? ` (relay instance ${relayInstance})` : ""} — open vibeos.sh/app › Settings › Capabilities and check it shows the same relay instance`;
+  `no vibeOS tab is paired with this token${relayInstance ? ` (relay instance ${relayInstance} — the Capabilities pane must show the same one)` : ""} — open vibeos.sh/app › Settings › Capabilities`;
+/**
+ * Resolves once the relay has answered the hello (so `paired` means
+ * something) or the tab's schemas have arrived, or after `ms`. A client like
+ * mcpt sends its first call right after initialize, ~1.5 s before the relay
+ * dial completes, and must not be told "no tab" for that.
+ */
+let settleWaiters = [];
+const settled = (ms) => {
+  if (paired || toolSchemas.length || relayInstance !== undefined || helloSeen) return Promise.resolve();
+  return new Promise((resolve) => {
+    const timer = setTimeout(() => { settleWaiters = settleWaiters.filter((w) => w !== done); resolve(); }, ms);
+    const done = () => { clearTimeout(timer); resolve(); };
+    settleWaiters.push(done);
+  });
+};
+const settle = () => { for (const w of settleWaiters.splice(0)) w(); };
+let helloSeen = false;
 // The MCP client's name, once initialize has run: the tab's pane says
 // "claude-code is connected" rather than "an agent".
 let agentName = "";
@@ -99,6 +116,8 @@ const socket = new RelaySocket(relayUrl, {
   onHello: ({ paired: isPaired, instance }) => {
     paired = isPaired;
     relayInstance = instance;
+    helloSeen = true;
+    settle();
     process.stderr.write(
       `vibeos-mcp: relay connected, tab paired: ${isPaired ? "yes" : "no"}, relay instance ${instance ?? "(unreported)"}\n`
     );
@@ -121,6 +140,7 @@ const socket = new RelaySocket(relayUrl, {
       toolSchemas = msg.tools;
       paired = true;
       sawSchemas?.();
+      settle();
       // A client that asked before the tab answered got an empty list; this
       // tells it to ask again rather than cache "no tools" for the session.
       if (changed && initialized) server.sendToolListChanged().catch(() => {});
@@ -140,7 +160,7 @@ const socket = new RelaySocket(relayUrl, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.5" },
+  { name: "vibeos", version: "0.1.6" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -178,6 +198,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (ended) return { content: [{ type: "text", text: `vibeos: ${ended}` }], isError: true };
+  await settled(3000);
   if (!paired && !toolSchemas.length) {
     return { content: [{ type: "text", text: noTab() }], isError: true };
   }

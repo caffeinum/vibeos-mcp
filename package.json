@@ -1,6 +1,6 @@
 {
   "name": "vibeos-mcp",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "Drive a vibeOS desktop from your own MCP client (Claude Code, Cursor, Codex).",
   "type": "module",
   "bin": {
