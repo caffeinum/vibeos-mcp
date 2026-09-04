@@ -13,7 +13,6 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 24
-          registry-url: https://registry.npmjs.org
           cache: npm
       - run: npm ci
       - run: node e2e.mjs
@@ -22,5 +21,6 @@ jobs:
           v=$(node -p "require('./package.json').version")
           [ "v$v" = "${GITHUB_REF_NAME}" ] || { echo "tag ${GITHUB_REF_NAME} != package.json v$v"; exit 1; }
       # trusted publishing: npm's OIDC trusted publisher is bound to this
-      # repo + workflow file name. no token — a token present would override OIDC.
+      # repo + workflow file name. no token and no setup-node registry-url: either
+      # plants an _authToken in .npmrc and npm then skips OIDC.
       - run: npm publish --provenance --access public
