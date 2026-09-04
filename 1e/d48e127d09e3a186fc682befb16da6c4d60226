@@ -1,0 +1,27 @@
+.github/workflows/publish.yml
+  s_ed069581db5338::t_c6908d5a11814e 1-28
+.github/workflows/ci.yml
+  s_ed069581db5338::t_c6908d5a11814e 1-18
+CLAUDE.md
+  s_ed069581db5338::t_33320cf85798e4 41-48
+package-lock.json
+  s_ed069581db5338::t_c12f25b7840610 1-1224
+package.json
+  s_ed069581db5338::t_9e8af402863ea3 6-13,18-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "1ed48e127d09e3a186fc682befb16da6c4d60226",
+  "prompts": {},
+  "sessions": {
+    "s_ed069581db5338": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec6cf2bb-a5dd-4b1c-a8c7-0643ed9fef7c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Aleksey Bykhun <theisease@gmail.com>"
+    }
+  }
+}
