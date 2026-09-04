@@ -43,11 +43,17 @@ Until this is published on npm the pane advertises `npx github:caffeinum/vibeos-
 
 `.github/workflows/ci.yml` runs `node e2e.mjs` on push/PR (the relay is inline in
 e2e.mjs; nothing is fetched from vibeos-landing). `publish.yaml` publishes to npm on
-a `v*` tag with `--provenance`: npm trusted publishing (OIDC) bound to
-`caffeinum/vibeos-mcp` + this workflow file name; no token secret (one present
-would override OIDC). The tag must equal `v<package.json version>`.
+a `v*` tag with `--provenance` via npm trusted publishing (OIDC). The trusted
+publisher on npmjs.com is bound to `caffeinum/vibeos-mcp` + the file name
+`publish.yaml` exactly — renaming the workflow breaks it. No token secret and no
+`registry-url` on setup-node: either plants an `_authToken` in .npmrc and npm then
+skips OIDC (seen as E404/ENEEDAUTH). The tag must equal `v<package.json version>`.
 
-Published as `vibeos-mcp` (unscoped; 0.1.0/0.1.1 went out as `@caffeinum/vibeos-mcp`
-before the operator asked for the public name — the first token was scoped). `bin` paths must not start with `./` or npm
-rewrites them at publish. Local `npm view` may 404 fresh versions: ~/.npmrc has a
-`before=` min-release-age gate; override with `npm_config_before=` to check.
+Release: bump `version` in package.json (and the server version in index.mjs),
+commit, `git tag vX.Y.Z && git push origin vX.Y.Z`. 0.1.2 was published by hand to
+create the package; 0.1.3+ went through the workflow. `@caffeinum/vibeos-mcp`
+0.1.0/0.1.1 exist from a scoped-token detour and should be deprecated.
+
+`bin` paths must not start with `./` or npm rewrites them at publish. Local
+`npm view` may 404 fresh versions: ~/.npmrc has a `before=` min-release-age gate;
+override with `npm_config_before=` to check.
