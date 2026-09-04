@@ -7,7 +7,7 @@
  * token, and the two are paired. This process speaks MCP over stdio to whatever
  * spawned it (Claude Code, Cursor, Codex) and forwards each call to the tab.
  *
- *   claude mcp add vibeos -- npx @caffeinum/vibeos-mcp --token <token>
+ *   claude mcp add vibeos -- npx vibeos-mcp --token <token>
  *
  * The tool list is not hardcoded: the tab sends its TOOL_SCHEMAS on connect, so
  * a tool added to the desktop appears here without shipping a new version, and

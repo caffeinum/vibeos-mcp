@@ -4,7 +4,7 @@ The MCP server that lets any MCP client (Claude Code, Cursor, Codex, mcpt) drive
 vibeOS desktop at https://vibeos.sh/app — "bring your own agent", the alternative to
 pasting an OpenAI key. `bun` or `node`, no build step.
 
-    claude mcp add vibeos -- npx @caffeinum/vibeos-mcp --token <token from Settings › Capabilities>
+    claude mcp add vibeos -- npx vibeos-mcp --token <token from Settings › Capabilities>
 
 ## How it works
 
@@ -47,7 +47,7 @@ a `v*` tag with `--provenance`: trusted publishing (OIDC) if the npm package has
 trusted publisher bound to `caffeinum/vibeos-mcp` + `publish.yml`, else the
 `NPM_TOKEN` secret. The tag must equal `v<package.json version>`.
 
-Published as `@caffeinum/vibeos-mcp` (the unscoped name 403s under the publish
-token, which is scoped to @caffeinum). `bin` paths must not start with `./` or npm
+Published as `vibeos-mcp` (unscoped; 0.1.0/0.1.1 went out as `@caffeinum/vibeos-mcp`
+before the operator asked for the public name — the first token was scoped). `bin` paths must not start with `./` or npm
 rewrites them at publish. Local `npm view` may 404 fresh versions: ~/.npmrc has a
 `before=` min-release-age gate; override with `npm_config_before=` to check.
