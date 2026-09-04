@@ -1,0 +1,21 @@
+CLAUDE.md
+  s_ed069581db5338::t_d027ae838a9ec8 36-39
+live-tab.mjs
+  s_ed069581db5338::t_90fdb82f73a25c 1-27
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "c5ff7d02b47193dfbda3bec6156d2f77d99ca6f7",
+  "prompts": {},
+  "sessions": {
+    "s_ed069581db5338": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec6cf2bb-a5dd-4b1c-a8c7-0643ed9fef7c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Aleksey Bykhun <theisease@gmail.com>"
+    }
+  }
+}
