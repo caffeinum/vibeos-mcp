@@ -38,3 +38,11 @@ pane) lives in vibeos-landing's `public/app/kernel/agent.js` and `ui/settings.js
 changes to the frame contract must land on both sides, contract first.
 
 Until this is published on npm the pane advertises `npx github:caffeinum/vibeos-mcp`.
+
+## CI / publish
+
+`.github/workflows/ci.yml` runs `node e2e.mjs` on push/PR (the relay is inline in
+e2e.mjs; nothing is fetched from vibeos-landing). `publish.yml` publishes to npm on
+a `v*` tag with `--provenance`: trusted publishing (OIDC) if the npm package has a
+trusted publisher bound to `caffeinum/vibeos-mcp` + `publish.yml`, else the
+`NPM_TOKEN` secret. The tag must equal `v<package.json version>`.
