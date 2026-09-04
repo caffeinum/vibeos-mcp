@@ -1,10 +1,10 @@
 {
   "name": "@caffeinum/vibeos-mcp",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Drive a vibeOS desktop from your own MCP client (Claude Code, Cursor, Codex).",
   "type": "module",
   "bin": {
-    "vibeos-mcp": "./index.mjs"
+    "vibeos-mcp": "index.mjs"
   },
   "files": [
     "index.mjs",
