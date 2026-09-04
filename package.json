@@ -1,0 +1,13 @@
+{
+  "name": "vibeos-mcp",
+  "version": "0.1.0",
+  "description": "Drive a vibeOS desktop from your own MCP client (Claude Code, Cursor, Codex).",
+  "type": "module",
+  "bin": { "vibeos-mcp": "./index.mjs" },
+  "files": ["index.mjs", "relay-socket.mjs", "README.md"],
+  "license": "MIT",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "ws": "^8.18.0"
+  }
+}
