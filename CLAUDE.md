@@ -4,7 +4,7 @@ The MCP server that lets any MCP client (Claude Code, Cursor, Codex, mcpt) drive
 vibeOS desktop at https://vibeos.sh/app — "bring your own agent", the alternative to
 pasting an OpenAI key. `bun` or `node`, no build step.
 
-    claude mcp add vibeos -- npx vibeos-mcp --token <token from Settings › Capabilities>
+    claude mcp add vibeos -- npx @caffeinum/vibeos-mcp --token <token from Settings › Capabilities>
 
 ## How it works
 

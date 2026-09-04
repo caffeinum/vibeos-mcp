@@ -5,7 +5,7 @@ Code, Cursor, Codex — instead of pasting an API key into the browser. vibeOS
 supplies the tools and the machine; your agent supplies the model.
 
 ```sh
-claude mcp add vibeos -- npx vibeos-mcp --token <token>
+claude mcp add vibeos -- npx @caffeinum/vibeos-mcp --token <token>
 ```
 
 Get the token from **Settings → Capabilities** in the desktop. It is one token
