@@ -39,10 +39,12 @@ Between the tab and this package. The relay does not interpret any of it.
 | tab → agent | `{"tools":[{name,description,parameters}]}` | `TOOL_SCHEMAS`, verbatim |
 | agent → tab | `{"id":N,"tool":"name","input":{...}}` | a call |
 | tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer |
-| relay → either | `{"paired":true\|false}` | the relay's answer to the hello: is the other side already there |
+| relay → either | `{"paired":true\|false,"instance":"<id>"}` | the relay's answer to the hello: is the other side already there, and which relay function instance this is (tab and agent must land on the same one) |
+| agent → relay | `{"ping":N}` | every 30 s; a relay that names its instance must answer within 10 s or this side redials |
+| relay → agent | `{"pong":N,"instance":"<id>"}` | the relay's answer, never forwarded to the tab |
 | relay → either | `{"error":"peer not connected","code":4002}` | the other end is gone |
 | tab → relay | `{"revoke":true}` | byte-exact; the relay closes both ends 4003 and forgets the token |
-| tab → agent | `{"ping":<ms>}` | every 30 s, so the relay's 4002 tells the tab the agent left; ignored here |
+| tab → relay | `{"ping":<ms>}` | every 30 s, answered by the relay the same way |
 
 The tab also sends `{"tools":...}` unsolicited when it connects. That is not
 enough on its own: this package usually pairs *after* the tab, and reconnects
@@ -56,8 +58,11 @@ from one doing slow work, and the user cannot tell the difference.
 
 - Relay drops mid-call (the ~800 s cut): in-flight calls reject with a note that
   the desktop may still have run the tool. The socket redials in place.
-- No tab paired: `tools/list` explains that no tab is connected rather than
-  reporting zero tools, which clients cache.
+- No tab paired: `tools/list` answers within 2 s with an empty list — Claude Code
+  gives up on a slow list and shows the server as broken — and sends
+  `notifications/tools/list_changed` the moment the tab's schemas arrive. A
+  `tools/call` in the gap errors with the relay instance id, so it can be
+  compared with the one the Capabilities pane shows.
 - The tab's socket dies with a call in flight: the relay tells this side
   `4002` at once (not on the next send), so the call fails with the same note.
 - A second `vibeos-mcp` on the same token (close code 4001): final for the

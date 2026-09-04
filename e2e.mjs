@@ -20,6 +20,14 @@ wss.on("connection", (ws) => {
       const pair = pairs.get(token) ?? {};
       pair[side] = ws;
       pairs.set(token, pair);
+      const peer = side === "tab" ? pair.agent : pair.tab;
+      ws.send(JSON.stringify({ paired: !!peer, instance: "e2e-1" }));
+      return;
+    }
+    const msg = JSON.parse(data);
+    if (typeof msg.ping === "number") {
+      // The relay answers pings itself and never forwards them (fix/relay-heartbeat).
+      ws.send(JSON.stringify({ pong: msg.ping, instance: "e2e-1" }));
       return;
     }
     const pair = pairs.get(token) ?? {};
@@ -67,23 +75,29 @@ tab.on("message", (raw) => {
 const child = spawn("node", ["index.mjs", "--token", TOKEN, "--relay", url], {
   cwd: import.meta.dirname, stdio: ["pipe", "pipe", "inherit"],
 });
-let buf = "";
-const waiters = new Map();
-child.stdout.on("data", (d) => {
-  buf += d.toString();
-  let i;
-  while ((i = buf.indexOf("\n")) >= 0) {
-    const line = buf.slice(0, i); buf = buf.slice(i + 1);
-    if (!line.trim()) continue;
-    const msg = JSON.parse(line);
-    if (waiters.has(msg.id)) { waiters.get(msg.id)(msg); waiters.delete(msg.id); }
-  }
-});
-const rpc = (id, method, params) => {
-  const p = new Promise((r) => waiters.set(id, r));
-  child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
-  return p;
+const wire = (child) => {
+  let buf = "";
+  const waiters = new Map();
+  const notifications = [];
+  child.stdout.on("data", (d) => {
+    buf += d.toString();
+    let i;
+    while ((i = buf.indexOf("\n")) >= 0) {
+      const line = buf.slice(0, i); buf = buf.slice(i + 1);
+      if (!line.trim()) continue;
+      const msg = JSON.parse(line);
+      if (msg.id == null && msg.method) notifications.push(msg.method);
+      if (waiters.has(msg.id)) { waiters.get(msg.id)(msg); waiters.delete(msg.id); }
+    }
+  });
+  const rpc = (id, method, params) => {
+    const p = new Promise((r) => waiters.set(id, r));
+    child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
+    return p;
+  };
+  return { rpc, notifications };
 };
+const { rpc } = wire(child);
 
 let failures = 0;
 const check = (name, cond, detail) => {
@@ -113,6 +127,45 @@ const orphan = await Promise.race([
 ]);
 check("a call with no tab errors instead of hanging", !orphan.hung && (orphan.error || orphan.result?.isError), JSON.stringify(orphan).slice(0, 120));
 
-child.kill(); wss.close();
+child.kill();
+
+// --- the other order: the agent asks before any tab exists. Claude Code gives
+// up on a slow tools/list and shows the server as broken, so the answer must be
+// fast and empty, and list_changed must follow once the tab pairs.
+const TOKEN2 = "d".repeat(64);
+const child2 = spawn("node", ["index.mjs", "--token", TOKEN2, "--relay", url], {
+  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "inherit"],
+});
+const w2 = wire(child2);
+await w2.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+child2.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+const t0 = Date.now();
+const empty = await w2.rpc(2, "tools/list", {});
+check("tools/list with no tab answers fast and empty, not an error",
+  Date.now() - t0 < 3500 && Array.isArray(empty.result?.tools) && empty.result.tools.length === 0,
+  `${Date.now() - t0}ms ${JSON.stringify(empty).slice(0, 120)}`);
+const noTabCall = await w2.rpc(3, "tools/call", { name: "list_apps", arguments: {} });
+check("tools/call with no tab names the relay instance",
+  noTabCall.result?.isError && /no vibeOS tab.*e2e-1/.test(noTabCall.result?.content?.[0]?.text ?? ""),
+  JSON.stringify(noTabCall).slice(0, 160));
+
+const tab2 = new WebSocket(url);
+await new Promise((r) => tab2.on("open", r));
+tab2.send(JSON.stringify({ hello: "tab", token: TOKEN2 }));
+tab2.on("message", (raw) => {
+  const msg = JSON.parse(raw.toString("utf8"));
+  if (msg.want === "tools") tab2.send(JSON.stringify({ tools: TOOLS }));
+});
+// the agent asked at ITS connect, before this tab existed; the tab's own
+// unsolicited send is what must reach it now
+tab2.send(JSON.stringify({ tools: TOOLS }));
+await new Promise((r) => setTimeout(r, 500));
+check("list_changed is sent once the tab's schemas arrive",
+  w2.notifications.includes("notifications/tools/list_changed"), JSON.stringify(w2.notifications));
+const after = await w2.rpc(4, "tools/list", {});
+check("tools/list after the tab pairs has the tools",
+  (after.result?.tools ?? []).map((t) => t.name).join(",") === "list_apps,vm_exec", JSON.stringify(after).slice(0, 120));
+
+child2.kill(); tab2.close(); wss.close();
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
 process.exit(failures ? 1 : 0);

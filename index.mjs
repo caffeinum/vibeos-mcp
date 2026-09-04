@@ -55,6 +55,11 @@ const pending = new Map();
 let nextId = 1;
 let toolSchemas = [];
 let sawSchemas = null;
+/** What the relay last said about the tab: paired or not, on which instance. */
+let paired = false;
+let relayInstance = undefined;
+const noTab = () =>
+  `no vibeOS tab is paired with this token${relayInstance ? ` (relay instance ${relayInstance})` : ""} — open vibeos.sh/app › Settings › Capabilities and check it shows the same relay instance`;
 // The MCP client's name, once initialize has run: the tab's pane says
 // "claude-code is connected" rather than "an agent".
 let agentName = "";
@@ -91,6 +96,13 @@ const socket = new RelaySocket(relayUrl, {
       failAll("vibeos relay disconnected mid-call (the desktop may still have run it)");
     }
   },
+  onHello: ({ paired: isPaired, instance }) => {
+    paired = isPaired;
+    relayInstance = instance;
+    process.stderr.write(
+      `vibeos-mcp: relay connected, tab paired: ${isPaired ? "yes" : "no"}, relay instance ${instance ?? "(unreported)"}\n`
+    );
+  },
   onEnd: (reason) => {
     ended = reason;
     toolSchemas = [];
@@ -105,11 +117,17 @@ const socket = new RelaySocket(relayUrl, {
     }
 
     if (Array.isArray(msg?.tools)) {
+      const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
+      paired = true;
       sawSchemas?.();
+      // A client that asked before the tab answered got an empty list; this
+      // tells it to ask again rather than cache "no tools" for the session.
+      if (changed && initialized) server.sendToolListChanged().catch(() => {});
       return;
     }
     if (msg?.error && msg?.code) {
+      if (msg.code === 4002) paired = false;
       failAll(`vibeos relay: ${msg.error}`);
       return;
     }
@@ -122,17 +140,20 @@ const socket = new RelaySocket(relayUrl, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.4" },
-  { capabilities: { tools: {} } }
+  { name: "vibeos", version: "0.1.5" },
+  { capabilities: { tools: { listChanged: true } } }
 );
+let initialized = false;
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   if (ended) throw new Error(`vibeos: ${ended}`);
   if (!toolSchemas.length) {
-    // Wait briefly for the tab's schema frame rather than reporting zero tools,
-    // which a client caches and which looks like a broken server.
+    // Give the tab a moment to answer `want:tools` — the relay dial takes
+    // ~1.5 s — but not long: Claude Code gives up on tools/list well before
+    // 5 s and then shows the server as broken. Past that, answer with what we
+    // have and send list_changed when the tab's schemas arrive.
     await new Promise((resolve) => {
-      const timer = setTimeout(resolve, 5000);
+      const timer = setTimeout(resolve, 2000);
       sawSchemas = () => {
         clearTimeout(timer);
         resolve();
@@ -141,9 +162,8 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     sawSchemas = null;
   }
   if (!toolSchemas.length) {
-    throw new Error(
-      "no vibeOS tab is paired with this token — open vibeos.sh/app and check Settings > Capabilities"
-    );
+    process.stderr.write(`vibeos-mcp: tools/list with no tab schemas yet — ${noTab()}\n`);
+    return { tools: [] };
   }
   // `parameters` passes through as `inputSchema` unchanged: one source of truth
   // for the tool surface, no second API to keep in sync.
@@ -158,6 +178,9 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (ended) return { content: [{ type: "text", text: `vibeos: ${ended}` }], isError: true };
+  if (!paired && !toolSchemas.length) {
+    return { content: [{ type: "text", text: noTab() }], isError: true };
+  }
   const id = nextId++;
   const answer = new Promise((resolve, reject) => {
     pending.set(id, { resolve, reject });
@@ -178,6 +201,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
 });
 
 server.oninitialized = () => {
+  initialized = true;
   agentName = server.getClientVersion()?.name ?? "";
   askForTools();
 };
