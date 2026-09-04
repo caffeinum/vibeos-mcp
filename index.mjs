@@ -39,6 +39,17 @@ if (!token || !/^[0-9a-f]{64}$/.test(token)) {
   process.exit(2);
 }
 
+if (process.stdin.isTTY) {
+  // Run by hand in a terminal, not by an MCP client: it would sit waiting for
+  // JSON-RPC on stdin forever and look hung. Say so, keep running anyway.
+  process.stderr.write(
+    "vibeos-mcp: this is an MCP server — it speaks to a client over stdin, " +
+    "not to you. Register it instead:\n" +
+    `  claude mcp add vibeos -- npx vibeos-mcp --token ${token}\n` +
+    "(Cursor/Codex: same command in their MCP config.) Ctrl-C to quit.\n"
+  );
+}
+
 /** Tool calls awaiting an answer from the tab, by id. */
 const pending = new Map();
 let nextId = 1;
@@ -111,7 +122,7 @@ const socket = new RelaySocket(relayUrl, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.0" },
+  { name: "vibeos", version: "0.1.4" },
   { capabilities: { tools: {} } }
 );
 
