@@ -6,7 +6,9 @@ import { WebSocketServer } from "ws";
 import { spawn } from "node:child_process";
 
 const TOKEN = "c".repeat(64);
+const BYE_TOKEN = "e".repeat(64);
 const pairs = new Map();
+const dials = new Map();
 
 // --- the relay, same pairing rules as app/api/mcp/[token]/route.ts ---
 const wss = new WebSocketServer({ port: 0 });
@@ -20,8 +22,14 @@ wss.on("connection", (ws) => {
       const pair = pairs.get(token) ?? {};
       pair[side] = ws;
       pairs.set(token, pair);
+      dials.set(token, (dials.get(token) ?? 0) + 1);
       const peer = side === "tab" ? pair.agent : pair.tab;
       ws.send(JSON.stringify({ paired: !!peer, instance: "e2e-1" }));
+      // API Gateway cannot send custom close codes: the relay says bye in-band
+      // and then closes normally. Must read as revoked, and must not redial.
+      if (token === BYE_TOKEN && side === "agent") {
+        setTimeout(() => { ws.send(JSON.stringify({ bye: 4003, reason: "revoked" })); ws.close(1000); }, 300);
+      }
       return;
     }
     const msg = JSON.parse(data);
@@ -166,6 +174,23 @@ const after = await w2.rpc(4, "tools/list", {});
 check("tools/list after the tab pairs has the tools",
   (after.result?.tools ?? []).map((t) => t.name).join(",") === "list_apps,vm_exec", JSON.stringify(after).slice(0, 120));
 
-child2.kill(); tab2.close(); wss.close();
+child2.kill(); tab2.close();
+
+// --- bye frame instead of a close code, and a dead first relay url
+const child3 = spawn("node", ["index.mjs", "--token", BYE_TOKEN, "--relay", `ws://127.0.0.1:1/dead,${url}`], {
+  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "pipe"],
+});
+let err3 = "";
+child3.stderr.on("data", (d) => { err3 += d; });
+const w3 = wire(child3);
+await w3.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+child3.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+await new Promise((r) => setTimeout(r, 2500));
+check("an unreachable first relay falls through to the next", /unreachable, trying ws:\/\/127\.0\.0\.1/.test(err3) && (dials.get(BYE_TOKEN) ?? 0) >= 1, err3.slice(0, 200));
+const revoked = await w3.rpc(2, "tools/call", { name: "list_apps", arguments: {} });
+check("a bye:4003 frame reads as revoked", revoked.result?.isError && /revoked/.test(revoked.result?.content?.[0]?.text ?? ""), JSON.stringify(revoked).slice(0, 160));
+check("and is final: no redial after bye", dials.get(BYE_TOKEN) === 1, `dials=${dials.get(BYE_TOKEN)}`);
+
+child3.kill(); wss.close();
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
 process.exit(failures ? 1 : 0);

@@ -19,7 +19,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { RelaySocket } from "./relay-socket.mjs";
+import { RelaySocket, FRAME_WARN_BYTES } from "./relay-socket.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -28,7 +28,11 @@ const flag = (name) => {
 };
 
 const token = flag("--token") ?? process.env.VIBEOS_TOKEN;
-const relayUrl = flag("--relay") ?? process.env.VIBEOS_RELAY ?? "wss://vibeos.sh/api/mcp/relay";
+// Comma-separated, in order of preference: a relay that cannot be reached at
+// all falls through to the next. One url by default until the durable relay
+// is announced.
+const relayUrls = (flag("--relay") ?? process.env.VIBEOS_RELAY ?? "wss://vibeos.sh/api/mcp/relay")
+  .split(",").map((u) => u.trim()).filter(Boolean);
 
 if (!token || !/^[0-9a-f]{64}$/.test(token)) {
   // stderr, not stdout: stdout is the MCP transport and any stray byte there
@@ -96,7 +100,8 @@ function failAll(reason) {
   }
 }
 
-const socket = new RelaySocket(relayUrl, {
+const socket = new RelaySocket(relayUrls, {
+  onWarn: (text) => process.stderr.write(`vibeos-mcp: ${text}\n`),
   hello: { hello: "agent", token },
   onGap: (open) => {
     if (open) {
@@ -136,6 +141,9 @@ const socket = new RelaySocket(relayUrl, {
     }
 
     if (Array.isArray(msg?.tools)) {
+      if (Buffer.byteLength(raw) > FRAME_WARN_BYTES) {
+        process.stderr.write(`vibeos-mcp: the tab's tool list is ${Buffer.byteLength(raw)} bytes, near the relay's 32 KB frame limit\n`);
+      }
       const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
       paired = true;
@@ -160,7 +168,7 @@ const socket = new RelaySocket(relayUrl, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.6" },
+  { name: "vibeos", version: "0.1.7" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;

@@ -12,14 +12,27 @@ import WebSocket from "ws";
 const DELAYS = [500, 1000, 2000, 2000, 2000];
 const PING_EVERY_MS = 30_000;
 const PONG_WITHIN_MS = 10_000;
+/** API Gateway posts at most 32 KB per frame; warn well before a frame is cut. */
+export const FRAME_WARN_BYTES = 30_000;
+
+/** Close codes (or `bye` frames) that end this socket for good, and why. */
+const FINAL = {
+  4001: "another vibeos-mcp is using this token; stop one of them, or pair a new token in Settings > Capabilities",
+  4003: "the desktop revoked this token in Settings > Capabilities",
+};
 
 export class RelaySocket {
   /**
    * @param {string} url
-   * @param {{ onFrame: (data: string) => void, onGap: (open: boolean) => void, onEnd: (reason: string) => void, onHello?: (reply: { paired: boolean, instance?: string }) => void, hello: object }} handlers
+   * @param {string | string[]} url the relay, or relays in order of preference:
+   *   a dial that fails before it opens moves to the next; an open socket that
+   *   later drops redials the same relay first.
+   * @param {{ onFrame: (data: string) => void, onGap: (open: boolean) => void, onEnd: (reason: string) => void, onHello?: (reply: { paired: boolean, instance?: string }) => void, onWarn?: (text: string) => void, hello: object }} handlers
    */
-  constructor(url, { onFrame, onGap, onEnd, onHello, hello }) {
-    this.url = url;
+  constructor(url, { onFrame, onGap, onEnd, onHello, onWarn, hello }) {
+    this.urls = Array.isArray(url) ? url : [url];
+    this.urlIndex = 0;
+    this.onWarn = onWarn;
     this.onFrame = onFrame;
     this.onGap = onGap;
     this.onEnd = onEnd;
@@ -68,13 +81,26 @@ export class RelaySocket {
     this.pongTimer = null;
   }
 
+  get url() {
+    return this.urls[this.urlIndex];
+  }
+
+  /** Final for this socket: no redial, every later call fails with `reason`. */
+  end(reason) {
+    this.ended = true;
+    this.stopHeartbeat();
+    this.onEnd(reason);
+  }
+
   dial() {
     if (this.ended) return;
     const inner = new WebSocket(this.url);
     this.inner = inner;
+    let opened = false;
 
     inner.on("open", () => {
       if (inner !== this.inner) return;
+      opened = true;
       this.attempt = 0;
       this.open = true;
       // The token goes in the first frame, never the URL: a URL reaches logs,
@@ -108,31 +134,47 @@ export class RelaySocket {
           this.onHello?.({ paired: msg.paired, instance: this.instance });
           return;
         }
+        // A relay that cannot send custom close codes (API Gateway) says
+        // goodbye in-band first. Same meaning as the close code it names.
+        if (msg.bye === 4001 || msg.bye === 4003) {
+          this.inner = null;
+          try { inner.close(); } catch { /* already gone */ }
+          this.open = false;
+          this.onGap(false);
+          this.end(FINAL[msg.bye]);
+          return;
+        }
       }
       this.onFrame(data);
     });
 
+    let gone_once = false;
     const gone = (code) => {
-      if (inner !== this.inner || this.ended) return;
+      // `ws` emits error AND close for one failed dial; count it once, or the
+      // url list rotates twice and lands back on the dead relay.
+      if (gone_once || inner !== this.inner || this.ended) return;
+      gone_once = true;
       this.open = false;
       this.stopHeartbeat();
       this.onGap(false);
       // 4003 is the desktop revoking this token in Settings: final, not a
       // gap. Redialing would attach this side alone and every call would be
       // 4002 forever, which reads as a relay outage rather than a decision.
-      if (code === 4003) {
-        this.ended = true;
-        this.onEnd("the desktop revoked this token in Settings > Capabilities");
-        return;
-      }
       // 4001 is another process on this token taking the agent side. Final
       // too: redialing displaced it back, it redialed, and the two flapped
       // every 0.5-2 s for life with neither completing a call — and the tab's
       // answer for one's call id could land in the other's pending slot.
-      if (code === 4001) {
-        this.ended = true;
-        this.onEnd("another vibeos-mcp is using this token; stop one of them, or pair a new token in Settings > Capabilities");
+      if (FINAL[code]) {
+        this.end(FINAL[code]);
         return;
+      }
+      // Never opened: this relay is unreachable, try the next one. A relay
+      // that was open and dropped (the ~800 s cut, the 2 h API Gateway limit)
+      // is redialed as is.
+      if (!opened && this.urls.length > 1) {
+        const next = (this.urlIndex + 1) % this.urls.length;
+        this.onWarn?.(`relay ${this.url} unreachable, trying ${this.urls[next]}`);
+        this.urlIndex = next;
       }
       const delay = DELAYS[Math.min(this.attempt++, DELAYS.length - 1)];
       setTimeout(() => this.dial(), delay);
@@ -143,6 +185,9 @@ export class RelaySocket {
 
   /** Frames sent during a gap are held, not dropped, and flushed on reconnect. */
   send(frame) {
+    if (Buffer.byteLength(frame) > FRAME_WARN_BYTES) {
+      this.onWarn?.(`frame of ${Buffer.byteLength(frame)} bytes is near the relay's 32 KB limit and may be cut`);
+    }
     if (this.open && this.inner) this.inner.send(frame);
     else this.held.push(frame);
   }

@@ -20,7 +20,11 @@ is a stdio MCP server that dials the same relay with `relay-socket.mjs` (redials
 `{id, tool, input}` → `{id, result}` | `{id, error}`; relay close codes: 4001 another
 package took this token (final), 4002 peer gone (retry), 4003 revoked (final).
 The hello reply carries the relay function `instance`; `{ping:N}` every 30 s is
-answered by the relay with `{pong:N,instance}` (never forwarded). `tools/list`
+answered by the relay with `{pong:N,instance}` (never forwarded). A `{bye:4001|4003,reason}` frame
+before a normal close means that close code (API Gateway cannot send custom codes).
+`--relay` accepts a comma-separated fallback list; the durable relay (API Gateway +
+DynamoDB, built by vibeos-landing) will become the default url with vercel as fallback.
+`tools/list`
 must answer fast (empty if no tab, then `list_changed`): Claude Code times out a
 slow list and shows the server as broken.
 

@@ -42,6 +42,7 @@ Between the tab and this package. The relay does not interpret any of it.
 | relay → either | `{"paired":true\|false,"instance":"<id>"}` | the relay's answer to the hello: is the other side already there, and which relay function instance this is (tab and agent must land on the same one) |
 | agent → relay | `{"ping":N}` | every 30 s; a relay that names its instance must answer within 10 s or this side redials |
 | relay → agent | `{"pong":N,"instance":"<id>"}` | the relay's answer, never forwarded to the tab |
+| relay → either | `{"bye":4001\|4003,"reason":"…"}` | sent just before a normal close by a relay that cannot send custom close codes (API Gateway); means exactly what the close code would |
 | relay → either | `{"error":"peer not connected","code":4002}` | the other end is gone |
 | tab → relay | `{"revoke":true}` | byte-exact; the relay closes both ends 4003 and forgets the token |
 | tab → relay | `{"ping":<ms>}` | every 30 s, answered by the relay the same way |
@@ -50,6 +51,10 @@ The tab also sends `{"tools":...}` unsolicited when it connects. That is not
 enough on its own: this package usually pairs *after* the tab, and reconnects
 roughly every 800 s when the serverless function reaches its limit — so it asks
 on every connect and the tab must answer `want`.
+
+`--relay` (or `VIBEOS_RELAY`) takes a comma-separated list: a relay that cannot
+be reached at all falls through to the next; one that was open and dropped is
+redialed as is. Frames near the relay's 32 KB limit are warned about on stderr.
 
 ## Failure behaviour
 
