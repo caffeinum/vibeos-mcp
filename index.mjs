@@ -172,7 +172,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.10" },
+  { name: "vibeos", version: "0.1.11" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -252,7 +252,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: `vibeos: ${e.message}` }], isError: true };
   }
 
-  const msg = await answer;
+  // A relay gap or a final close rejects the pending call; the model reads a
+  // tool error result and can retry, while a protocol-level error is only
+  // shown to the user. Text is the same reason either way.
+  let msg;
+  try {
+    msg = await answer;
+  } catch (e) {
+    return { content: [{ type: "text", text: e.message }], isError: true };
+  }
   if (msg.error) {
     return { content: [{ type: "text", text: String(msg.error) }], isError: true };
   }

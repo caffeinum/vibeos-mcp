@@ -148,7 +148,7 @@ const orphan = await Promise.race([
   rpc(4, "tools/call", { name: "list_apps", arguments: {} }),
   new Promise((r) => setTimeout(() => r({ hung: true }), 8000)),
 ]);
-check("a call with no tab errors instead of hanging", !orphan.hung && (orphan.error || orphan.result?.isError), JSON.stringify(orphan).slice(0, 120));
+check("a call with no tab errors instead of hanging, as a tool error result the model can act on", !orphan.hung && orphan.result?.isError && /peer not connected|no vibeOS tab/.test(orphan.result?.content?.[0]?.text ?? ""), JSON.stringify(orphan).slice(0, 160));
 
 child.kill();
 
