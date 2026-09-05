@@ -22,8 +22,11 @@ package took this token (final), 4002 peer gone (retry), 4003 revoked (final).
 The hello reply carries the relay function `instance`; `{ping:N}` every 30 s is
 answered by the relay with `{pong:N,instance}` (never forwarded). A `{bye:4001|4003,reason}` frame
 before a normal close means that close code (API Gateway cannot send custom codes).
-`--relay` accepts a comma-separated fallback list; the durable relay (API Gateway +
-DynamoDB, built by vibeos-landing) will become the default url with vercel as fallback.
+`--relay` accepts a comma-separated fallback list; default is the durable relay
+(API Gateway + DynamoDB, `wss://2yetm9bvy2.execute-api.us-east-1.amazonaws.com/prod`,
+instance `apigw-us-east-1`) then vercel. Sends over 128 KB are refused (API Gateway
+closes the sender with 1009); its `{"message":"Internal server error",…}` frame is
+surfaced as relay error code 5000 and fails in-flight calls.
 `tools/list`
 must answer fast (empty if no tab, then `list_changed`): Claude Code times out a
 slow list and shows the server as broken.

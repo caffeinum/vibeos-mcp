@@ -12,8 +12,12 @@ import WebSocket from "ws";
 const DELAYS = [500, 1000, 2000, 2000, 2000];
 const PING_EVERY_MS = 30_000;
 const PONG_WITHIN_MS = 10_000;
-/** API Gateway posts at most 32 KB per frame; warn well before a frame is cut. */
-export const FRAME_WARN_BYTES = 30_000;
+/**
+ * API Gateway closes the SENDER with 1009 above 128 KB (measured: 126 KB
+ * passes, 140 KB closes). A send over this is refused with an error rather
+ * than dropping the socket mid-call.
+ */
+export const FRAME_MAX_BYTES = 128 * 1024;
 
 /** Close codes (or `bye` frames) that end this socket for good, and why. */
 const FINAL = {
@@ -136,6 +140,13 @@ export class RelaySocket {
         }
         // A relay that cannot send custom close codes (API Gateway) says
         // goodbye in-band first. Same meaning as the close code it names.
+        // API Gateway's own error frame (a throttled or crashed lambda). Not
+        // the tab's, and never a no-op: the frame that caused it is lost.
+        if (typeof msg.message === "string" && msg.connectionId && !msg.tools && msg.id == null) {
+          this.onWarn?.(`relay error: ${msg.message} (requestId ${msg.requestId ?? "?"})`);
+          this.onFrame(JSON.stringify({ error: `relay error: ${msg.message}`, code: 5000 }));
+          return;
+        }
         if (msg.bye === 4001 || msg.bye === 4003) {
           this.inner = null;
           try { inner.close(); } catch { /* already gone */ }
@@ -185,8 +196,9 @@ export class RelaySocket {
 
   /** Frames sent during a gap are held, not dropped, and flushed on reconnect. */
   send(frame) {
-    if (Buffer.byteLength(frame) > FRAME_WARN_BYTES) {
-      this.onWarn?.(`frame of ${Buffer.byteLength(frame)} bytes is near the relay's 32 KB limit and may be cut`);
+    const bytes = Buffer.byteLength(frame);
+    if (bytes > FRAME_MAX_BYTES) {
+      throw new Error(`frame of ${bytes} bytes exceeds the relay's ${FRAME_MAX_BYTES} byte limit; the relay would drop this connection`);
     }
     if (this.open && this.inner) this.inner.send(frame);
     else this.held.push(frame);

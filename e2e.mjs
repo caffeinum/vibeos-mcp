@@ -174,8 +174,6 @@ const after = await w2.rpc(4, "tools/list", {});
 check("tools/list after the tab pairs has the tools",
   (after.result?.tools ?? []).map((t) => t.name).join(",") === "list_apps,vm_exec", JSON.stringify(after).slice(0, 120));
 
-child2.kill(); tab2.close();
-
 // --- bye frame instead of a close code, and a dead first relay url
 const child3 = spawn("node", ["index.mjs", "--token", BYE_TOKEN, "--relay", `ws://127.0.0.1:1/dead,${url}`], {
   cwd: import.meta.dirname, stdio: ["pipe", "pipe", "pipe"],
@@ -191,6 +189,9 @@ const revoked = await w3.rpc(2, "tools/call", { name: "list_apps", arguments: {}
 check("a bye:4003 frame reads as revoked", revoked.result?.isError && /revoked/.test(revoked.result?.content?.[0]?.text ?? ""), JSON.stringify(revoked).slice(0, 160));
 check("and is final: no redial after bye", dials.get(BYE_TOKEN) === 1, `dials=${dials.get(BYE_TOKEN)}`);
 
-child3.kill(); wss.close();
+const big = await w2.rpc(5, "tools/call", { name: "vm_exec", arguments: { command: "x".repeat(130 * 1024) } });
+check("a call over 128 KB is refused with the size, not sent", big.result?.isError && /exceeds the relay's 131072 byte limit/.test(big.result?.content?.[0]?.text ?? ""), JSON.stringify(big).slice(0, 160));
+
+child2.kill(); tab2.close(); child3.kill(); wss.close();
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
 process.exit(failures ? 1 : 0);

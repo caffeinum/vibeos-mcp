@@ -14,9 +14,13 @@ per tab session: it dies when the tab closes, and *Revoke* kills it immediately.
 ## Why a relay exists
 
 An MCP client spawns a subprocess or POSTs to an endpoint. A browser tab can do
-neither — it cannot listen, only dial out. So both ends dial
-`wss://vibeos.sh/api/mcp/relay` and the server pairs them by token and copies
-frames. The relay parses nothing beyond the first frame.
+neither — it cannot listen, only dial out. So both ends dial the same relay and
+it pairs them by token and copies frames, parsing nothing beyond the first frame.
+The default relay is `wss://2yetm9bvy2.execute-api.us-east-1.amazonaws.com/prod`
+(API Gateway + DynamoDB: pairing is durable, so it does not matter which server
+each side lands on), with `wss://vibeos.sh/api/mcp/relay` as fallback. The
+Capabilities pane's command carries `--relay <url>` when the tab is on a
+non-default one.
 
 ## Security
 
@@ -54,7 +58,10 @@ on every connect and the tab must answer `want`.
 
 `--relay` (or `VIBEOS_RELAY`) takes a comma-separated list: a relay that cannot
 be reached at all falls through to the next; one that was open and dropped is
-redialed as is. Frames near the relay's 32 KB limit are warned about on stderr.
+redialed as is. A call whose frame exceeds 128 KB is refused with an error naming
+the size (API Gateway closes the sender above that); the tab does the same for
+results. An API Gateway `{"message":"Internal server error",…}` frame (a
+throttled lambda) fails in-flight calls loudly rather than vanishing.
 
 ## Failure behaviour
 

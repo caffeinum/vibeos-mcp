@@ -19,7 +19,7 @@ import {
   CallToolRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
-import { RelaySocket, FRAME_WARN_BYTES } from "./relay-socket.mjs";
+import { RelaySocket, FRAME_MAX_BYTES } from "./relay-socket.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -31,7 +31,10 @@ const token = flag("--token") ?? process.env.VIBEOS_TOKEN;
 // Comma-separated, in order of preference: a relay that cannot be reached at
 // all falls through to the next. One url by default until the durable relay
 // is announced.
-const relayUrls = (flag("--relay") ?? process.env.VIBEOS_RELAY ?? "wss://vibeos.sh/api/mcp/relay")
+// The durable relay (API Gateway + DynamoDB, no instance affinity) first; the
+// vercel function, which pairs in memory per instance, only as a fallback.
+const DEFAULT_RELAYS = "wss://2yetm9bvy2.execute-api.us-east-1.amazonaws.com/prod,wss://vibeos.sh/api/mcp/relay";
+const relayUrls = (flag("--relay") ?? process.env.VIBEOS_RELAY ?? DEFAULT_RELAYS)
   .split(",").map((u) => u.trim()).filter(Boolean);
 
 if (!token || !/^[0-9a-f]{64}$/.test(token)) {
@@ -141,8 +144,8 @@ const socket = new RelaySocket(relayUrls, {
     }
 
     if (Array.isArray(msg?.tools)) {
-      if (Buffer.byteLength(raw) > FRAME_WARN_BYTES) {
-        process.stderr.write(`vibeos-mcp: the tab's tool list is ${Buffer.byteLength(raw)} bytes, near the relay's 32 KB frame limit\n`);
+      if (Buffer.byteLength(raw) > FRAME_MAX_BYTES * 0.9) {
+        process.stderr.write(`vibeos-mcp: the tab's tool list is ${Buffer.byteLength(raw)} bytes, near the relay's ${FRAME_MAX_BYTES} byte frame limit\n`);
       }
       const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
@@ -156,6 +159,7 @@ const socket = new RelaySocket(relayUrls, {
     }
     if (msg?.error && msg?.code) {
       if (msg.code === 4002) paired = false;
+      if (msg.code === 5000) process.stderr.write(`vibeos-mcp: ${msg.error} — in-flight calls failed\n`);
       failAll(`vibeos relay: ${msg.error}`);
       return;
     }
@@ -168,7 +172,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.7" },
+  { name: "vibeos", version: "0.1.8" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -215,9 +219,14 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     pending.set(id, { resolve, reject });
   });
 
-  socket.send(
-    JSON.stringify({ id, tool: request.params.name, input: request.params.arguments ?? {} })
-  );
+  try {
+    socket.send(
+      JSON.stringify({ id, tool: request.params.name, input: request.params.arguments ?? {} })
+    );
+  } catch (e) {
+    pending.delete(id);
+    return { content: [{ type: "text", text: `vibeos: ${e.message}` }], isError: true };
+  }
 
   const msg = await answer;
   if (msg.error) {
