@@ -1,0 +1,35 @@
+index.mjs
+  s_ed069581db5338::t_4020fca2f53f36 22,144-146
+  s_ed069581db5338::t_aa39cf04c0bfc1 31-35,103-104
+  s_ed069581db5338::t_6f8283289b56e2 171
+relay-socket.mjs
+  s_ed069581db5338::t_aa39cf04c0bfc1 15-22,27-30,32-35,84-94,99,103,137-144,167-168,171-178,188-190
+  s_ed069581db5338::t_ab10bb76c2157f 151,153-156
+  s_ed069581db5338::t_4e5d7d436e5737 145-146
+e2e.mjs
+  s_ed069581db5338::t_4020fca2f53f36 9,11,25,28-32,177-194
+CLAUDE.md
+  s_ed069581db5338::t_f24abdd7436a9d 23-27
+README.md
+  s_ed069581db5338::t_7a91b7f239a341 45,55-58
+package-lock.json
+  s_ed069581db5338::t_6ea5a59d4d3e70 3,9
+package.json
+  s_ed069581db5338::t_1dc9584fbaa571 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.0",
+  "base_commit_sha": "cfd5bde12208f5a2298aff49d3243a434ea008d4",
+  "prompts": {},
+  "sessions": {
+    "s_ed069581db5338": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec6cf2bb-a5dd-4b1c-a8c7-0643ed9fef7c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Aleksey Bykhun <theisease@gmail.com>"
+    }
+  }
+}
