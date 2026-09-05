@@ -175,7 +175,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.12" },
+  { name: "vibeos", version: "0.1.13" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;

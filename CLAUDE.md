@@ -45,8 +45,10 @@ the ws-drops-sends-on-CLOSING trap. Against the live route, both a raw stdio cli
 and `mcpt tools/call` were verified on 2026-09-04. `live-tab.mjs` drives a real
 vibeos.sh/app tab in a headless Chrome (puppeteer-core, not shipped) to pair a
 token for a full live e2e: tab → relay → npm package → mcpt; last green 2026-09-04
-18:55 PDT on vibeos-mcp@0.1.8 via the durable relay (3/3 calls 25 s apart, separate
-processes). A tab reloaded mid-deploy can run a stale kernel: pane says Waiting with
+22:30 PDT on vibeos-mcp@0.1.12 against landing 00a6d3d: the whole tool surface incl.
+read_desktop image, directory search deadline, secrets stripped, reload_os keeping
+the pairing. `reload-probe.mjs`-style in-process checks live in the scratchpad recipe
+in live-tab.mjs's header. A tab reloaded mid-deploy can run a stale kernel: pane says Waiting with
 no relay instance while no relay has it; reload again.
 
 ## Ownership
