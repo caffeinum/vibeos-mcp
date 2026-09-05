@@ -66,6 +66,8 @@ const TOOLS = [
 ];
 // Sent unsolicited at connect, exactly as the design says — and deliberately
 // BEFORE the agent exists, so the test proves the agent's request path works.
+const tabSawSampling = [];
+const askReplies = new Map();
 const INSTRUCTIONS = "vibeOS: the OS is system/kernel/*.js and system/ui/*.js; call read_desktop first.";
 tab.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
 tab.on("message", (raw) => {
@@ -73,9 +75,11 @@ tab.on("message", (raw) => {
   // The agent asks on connect, because it may pair long after the tab did and
   // would otherwise never see the schemas the tab sent at its own connect time.
   if (msg.want === "tools") {
+    tabSawSampling.push(msg.sampling);
     tab.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
     return;
   }
+  if (msg.ask != null) { askReplies.set(msg.ask, msg); return; }
   if (msg.id == null) return;
   if (msg.tool === "freeze") return; // a busy main thread: no answer, ever
   if (msg.tool === "vm_exec") tab.send(JSON.stringify({ id: msg.id, result: `ran: ${msg.input.command}` }));
@@ -92,6 +96,7 @@ const wire = (child) => {
   let buf = "";
   const waiters = new Map();
   const notifications = [];
+  const sampled = [];
   child.stdout.on("data", (d) => {
     buf += d.toString();
     let i;
@@ -100,6 +105,11 @@ const wire = (child) => {
       if (!line.trim()) continue;
       const msg = JSON.parse(line);
       if (msg.id == null && msg.method) notifications.push(msg.method);
+      if (msg.id != null && msg.method === "sampling/createMessage") {
+        sampled.push(msg.params);
+        child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: { role: "assistant", model: "fake-model", content: { type: "text", text: `answer to: ${msg.params.messages[0].content.text ?? msg.params.messages[0].content[0]?.text}` } } }) + "\n");
+        continue;
+      }
       if (waiters.has(msg.id)) { waiters.get(msg.id)(msg); waiters.delete(msg.id); }
     }
   });
@@ -108,7 +118,7 @@ const wire = (child) => {
     child.stdin.write(JSON.stringify({ jsonrpc: "2.0", id, method, params }) + "\n");
     return p;
   };
-  return { rpc, notifications };
+  return { rpc, notifications, sampled };
 };
 const { rpc } = wire(child);
 
@@ -131,6 +141,11 @@ check("parameters passed through as inputSchema",
 
 const call = await rpc(3, "tools/call", { name: "vm_exec", arguments: { command: "uname -m" } });
 check("tools/call round-trips through the tab", call.result?.content?.[0]?.text === "ran: uname -m", JSON.stringify(call.result));
+
+check("want:tools tells the tab this client cannot sample", tabSawSampling.length >= 1 && tabSawSampling.every((v) => v === false), JSON.stringify(tabSawSampling));
+tab.send(JSON.stringify({ ask: 1, ai: { prompt: "how many calories?" } }));
+await new Promise((r) => setTimeout(r, 500));
+check("an app's ask is refused when the client cannot sample, naming the client", /does not support sampling/.test(askReplies.get(1)?.error ?? "") && /e2e/.test(askReplies.get(1)?.error ?? ""), JSON.stringify(askReplies.get(1)));
 
 const shot = await rpc(31, "tools/call", { name: "read_desktop", arguments: {} });
 const c = shot.result?.content ?? [];
@@ -171,7 +186,7 @@ const child2 = spawn("node", ["index.mjs", "--token", TOKEN2, "--relay", url], {
 });
 const w2 = wire(child2);
 const ti = Date.now();
-const init2 = await w2.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+const init2 = await w2.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: { sampling: {} }, clientInfo: { name: "e2e-sampler", version: "0" } });
 check("with no tab, initialize still answers within the bounded wait and without instructions", Date.now() - ti < 5000 && init2.result && init2.result.instructions === undefined, `${Date.now() - ti}ms ${JSON.stringify(init2.result).slice(0, 120)}`);
 child2.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 const t0 = Date.now();
@@ -184,12 +199,14 @@ check("tools/call with no tab names the relay instance",
   noTabCall.result?.isError && /no vibeOS tab.*e2e-1/.test(noTabCall.result?.content?.[0]?.text ?? ""),
   JSON.stringify(noTabCall).slice(0, 160));
 
+const tab2Asks = new Map();
 const tab2 = new WebSocket(url);
 await new Promise((r) => tab2.on("open", r));
 tab2.send(JSON.stringify({ hello: "tab", token: TOKEN2 }));
 tab2.on("message", (raw) => {
   const msg = JSON.parse(raw.toString("utf8"));
-  if (msg.want === "tools") tab2.send(JSON.stringify({ tools: TOOLS }));
+  if (msg.want === "tools") { tab2Asks.set("sampling", msg.sampling); tab2.send(JSON.stringify({ tools: TOOLS })); }
+  if (msg.ask != null) tab2Asks.set(msg.ask, msg);
 });
 // the agent asked at ITS connect, before this tab existed; the tab's own
 // unsolicited send is what must reach it now
@@ -197,6 +214,11 @@ tab2.send(JSON.stringify({ tools: TOOLS }));
 await new Promise((r) => setTimeout(r, 500));
 check("list_changed is sent once the tab's schemas arrive",
   w2.notifications.includes("notifications/tools/list_changed"), JSON.stringify(w2.notifications));
+tab2.send(JSON.stringify({ ask: 7, ai: { prompt: "count the apples", images: [{ mime: "image/png", base64: PNG1 }], json: true, system: "be terse" } }));
+await new Promise((r) => setTimeout(r, 800));
+check("a sampling-capable client's model answers an app's ask",
+  tab2Asks.get(7)?.result === "answer to: count the apples\n\nAnswer with JSON only, no prose." && w2.sampled[0]?.systemPrompt === "be terse" && w2.sampled[0]?.messages[0].content[1]?.type === "image",
+  JSON.stringify({ reply: tab2Asks.get(7), sampled: w2.sampled[0] }).slice(0, 300));
 const after = await w2.rpc(4, "tools/list", {});
 check("tools/list after the tab pairs has the tools",
   (after.result?.tools ?? []).map((t) => t.name).join(",") === "list_apps,vm_exec", JSON.stringify(after).slice(0, 120));

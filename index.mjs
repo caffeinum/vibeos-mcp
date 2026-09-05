@@ -96,7 +96,47 @@ let helloSeen = false;
 let agentName = "";
 /** Set when the desktop revoked the token: every later call fails with this. */
 let ended = null;
-const askForTools = () => socket.send(JSON.stringify({ want: "tools", agent: agentName }));
+// `sampling` tells the tab whether this client's model can power the desktop's
+// apps (api.ai) when the tab has no model of its own. Known after initialize.
+const canSample = () => !!server.getClientCapabilities?.()?.sampling;
+const askForTools = () => socket.send(JSON.stringify({ want: "tools", agent: agentName, sampling: canSample() }));
+
+/** How long an app's api.ai ask may wait on the client's model (a human may approve each). */
+const ASK_TIMEOUT_MS = Number(process.env.VIBEOS_ASK_TIMEOUT_MS) || 120_000;
+
+/**
+ * The tab asks the client's model on behalf of an app: {ask:N, ai:{prompt,
+ * images?:[{mime,base64}], json?, system?}} → {ask:N, result} | {ask:N, error}.
+ * Only when the client declared the sampling capability; otherwise the error
+ * says so and the tab shows its "connect a model" upsell instead.
+ */
+async function answerAsk(msg) {
+  const reply = (body) => socket.send(JSON.stringify({ ask: msg.ask, ...body }));
+  const ai = msg.ai ?? {};
+  if (!canSample()) {
+    return reply({ error: `the connected MCP client (${agentName || "unknown"}) does not support sampling, so it cannot power apps; connect a model in Settings` });
+  }
+  if (typeof ai.prompt !== "string" || !ai.prompt) return reply({ error: "ai.prompt must be a non-empty string" });
+  const content = [{ type: "text", text: ai.json ? `${ai.prompt}\n\nAnswer with JSON only, no prose.` : ai.prompt }];
+  for (const img of Array.isArray(ai.images) ? ai.images : []) {
+    if (typeof img?.mime === "string" && typeof img?.base64 === "string") content.push({ type: "image", mimeType: img.mime, data: img.base64 });
+  }
+  try {
+    const result = await Promise.race([
+      server.createMessage({
+        messages: [{ role: "user", content: content.length === 1 ? content[0] : content }],
+        ...(typeof ai.system === "string" && ai.system ? { systemPrompt: ai.system } : {}),
+        maxTokens: Number.isInteger(ai.maxTokens) ? ai.maxTokens : 2000,
+      }),
+      new Promise((_, rej) => setTimeout(() => rej(new Error(`the client's model did not answer within ${Math.round(ASK_TIMEOUT_MS / 1000)} s`)), ASK_TIMEOUT_MS)),
+    ]);
+    const parts = Array.isArray(result.content) ? result.content : [result.content];
+    const text = parts.filter((c) => c?.type === "text").map((c) => c.text).join("\n");
+    reply({ result: text });
+  } catch (e) {
+    reply({ error: `sampling failed: ${e.message}` });
+  }
+}
 
 /**
  * A call fails rather than hanging when the tab goes away. An MCP client that
@@ -150,6 +190,10 @@ const socket = new RelaySocket(relayUrls, {
       return;
     }
 
+    if (msg?.ask != null && msg?.ai) {
+      answerAsk(msg);
+      return;
+    }
     if (Array.isArray(msg?.tools)) {
       if (Buffer.byteLength(raw) > FRAME_MAX_BYTES * 0.9) {
         process.stderr.write(`vibeos-mcp: the tab's tool list is ${Buffer.byteLength(raw)} bytes, near the relay's ${FRAME_MAX_BYTES} byte frame limit\n`);
@@ -187,7 +231,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.15" },
+  { name: "vibeos", version: "0.1.16" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;

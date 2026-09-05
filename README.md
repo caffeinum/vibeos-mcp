@@ -40,7 +40,9 @@ Between the tab and this package. The relay does not interpret any of it.
 | Direction | Frame | Meaning |
 |---|---|---|
 | both → relay | `{"hello":"tab"\|"agent","token":"<64 hex>"}` | first frame, pairs the socket |
-| agent → tab | `{"want":"tools","agent":"<client name>"}` | sent on every (re)connect, and again after MCP initialize once the client's name is known (empty before) |
+| agent → tab | `{"want":"tools","agent":"<client name>","sampling":bool}` | sent on every (re)connect, and again after MCP initialize once the client's name and capabilities are known; `sampling` says whether the client's model can power apps |
+| tab → agent | `{"ask":N,"ai":{"prompt","images?":[{mime,base64}],"json?","system?"}}` | an app's `api.ai` call when the tab has no model of its own; answered via MCP sampling (`sampling/createMessage`) when the client supports it |
+| agent → tab | `{"ask":N,"result":"…"}` or `{"ask":N,"error":"…"}` | the model's text, or why not (client cannot sample, 120 s deadline) — `ask` ids are the tab's, distinct from call `id`s |
 | tab → agent | `{"tools":[{name,description,parameters}],"instructions":"…"}` | `TOOL_SCHEMAS` verbatim, plus the tab's map of the OS (~6 KB): passed to the client as the MCP server's `instructions` in the initialize result |
 | agent → tab | `{"id":N,"tool":"name","input":{...}}` | a call |
 | tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer; any `{mime,base64}` or `{mimeType,data}` object in a result, at any depth, reaches the MCP client as image content and `{mime:"text/plain",text}` as a text block, each replaced in the JSON by a marker; never a data: url in text |
