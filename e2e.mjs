@@ -66,13 +66,14 @@ const TOOLS = [
 ];
 // Sent unsolicited at connect, exactly as the design says — and deliberately
 // BEFORE the agent exists, so the test proves the agent's request path works.
-tab.send(JSON.stringify({ tools: TOOLS }));
+const INSTRUCTIONS = "vibeOS: the OS is system/kernel/*.js and system/ui/*.js; call read_desktop first.";
+tab.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
 tab.on("message", (raw) => {
   const msg = JSON.parse(raw.toString("utf8"));
   // The agent asks on connect, because it may pair long after the tab did and
   // would otherwise never see the schemas the tab sent at its own connect time.
   if (msg.want === "tools") {
-    tab.send(JSON.stringify({ tools: TOOLS }));
+    tab.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
     return;
   }
   if (msg.id == null) return;
@@ -117,8 +118,9 @@ const check = (name, cond, detail) => {
   if (!cond) failures++;
 };
 
-await rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+const init = await rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
 child.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+check("the tab's instructions reach the client in the initialize result", init.result?.instructions === INSTRUCTIONS, JSON.stringify(init.result).slice(0, 200));
 
 const list = await rpc(2, "tools/list", {});
 const names = (list.result?.tools ?? []).map((t) => t.name);
@@ -168,7 +170,9 @@ const child2 = spawn("node", ["index.mjs", "--token", TOKEN2, "--relay", url], {
   cwd: import.meta.dirname, stdio: ["pipe", "pipe", "inherit"],
 });
 const w2 = wire(child2);
-await w2.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+const ti = Date.now();
+const init2 = await w2.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+check("with no tab, initialize still answers within the bounded wait and without instructions", Date.now() - ti < 5000 && init2.result && init2.result.instructions === undefined, `${Date.now() - ti}ms ${JSON.stringify(init2.result).slice(0, 120)}`);
 child2.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
 const t0 = Date.now();
 const empty = await w2.rpc(2, "tools/list", {});

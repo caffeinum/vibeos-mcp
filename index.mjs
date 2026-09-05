@@ -17,6 +17,7 @@ import { Server } from "@modelcontextprotocol/sdk/server/index.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import {
   CallToolRequestSchema,
+  InitializeRequestSchema,
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { RelaySocket, FRAME_MAX_BYTES } from "./relay-socket.mjs";
@@ -65,6 +66,9 @@ const pending = new Map();
 let nextId = 1;
 let toolSchemas = [];
 let sawSchemas = null;
+/** The tab's map of the OS, sent with the tools; the client sees it once, at initialize. */
+let instructions = "";
+let instructionsLate = false;
 /** What the relay last said about the tab: paired or not, on which instance. */
 let paired = false;
 let relayInstance = undefined;
@@ -152,6 +156,14 @@ const socket = new RelaySocket(relayUrls, {
       }
       const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
+      if (typeof msg.instructions === "string" && msg.instructions !== instructions) {
+        instructions = msg.instructions;
+        server._instructions = instructions;
+        if (initialized && !instructionsLate) {
+          instructionsLate = true;
+          process.stderr.write("vibeos-mcp: the tab's instructions arrived after initialize; MCP has no way to re-send them, so this client works from the tool descriptions alone (a reconnect gets them)\n");
+        }
+      }
       paired = true;
       sawSchemas?.();
       settle();
@@ -175,10 +187,30 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.14" },
+  { name: "vibeos", version: "0.1.15" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
+
+// The tab's instructions belong in the initialize result and MCP offers no
+// second chance, but the tab's frame usually lands ~1.5 s after the client's
+// initialize (the relay dial). So initialize waits for the first tools frame,
+// briefly: the relay open plus the tab's answer, never long enough for a
+// client to give up on the server.
+const INIT_WAIT_MS = Number(process.env.VIBEOS_INIT_WAIT_MS) || 3500;
+const originalInitialize = server._oninitialize.bind(server);
+server.setRequestHandler(InitializeRequestSchema, async (request) => {
+  if (!toolSchemas.length && !ended) {
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, INIT_WAIT_MS);
+      const prior = sawSchemas;
+      sawSchemas = () => { clearTimeout(timer); prior?.(); resolve(); };
+    });
+    if (!toolSchemas.length) sawSchemas = null;
+  }
+  server._instructions = instructions || undefined;
+  return originalInitialize(request);
+});
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   if (ended) throw new Error(`vibeos: ${ended}`);

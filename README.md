@@ -41,7 +41,7 @@ Between the tab and this package. The relay does not interpret any of it.
 |---|---|---|
 | both → relay | `{"hello":"tab"\|"agent","token":"<64 hex>"}` | first frame, pairs the socket |
 | agent → tab | `{"want":"tools","agent":"<client name>"}` | sent on every (re)connect, and again after MCP initialize once the client's name is known (empty before) |
-| tab → agent | `{"tools":[{name,description,parameters}]}` | `TOOL_SCHEMAS`, verbatim |
+| tab → agent | `{"tools":[{name,description,parameters}],"instructions":"…"}` | `TOOL_SCHEMAS` verbatim, plus the tab's map of the OS (~6 KB): passed to the client as the MCP server's `instructions` in the initialize result |
 | agent → tab | `{"id":N,"tool":"name","input":{...}}` | a call |
 | tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer; any `{mime,base64}` or `{mimeType,data}` object in a result, at any depth, reaches the MCP client as image content and `{mime:"text/plain",text}` as a text block, each replaced in the JSON by a marker; never a data: url in text |
 | relay → either | `{"paired":true\|false,"instance":"<id>"}` | the relay's answer to the hello: is the other side already there, and which relay function instance this is (tab and agent must land on the same one) |
@@ -76,6 +76,11 @@ cannot rasterise without a large vendor library, so they come back as text, not
 pixels. `list_themes`, `list_files` and `search_file` over a directory or glob
 (in a worker, 3 s deadline) complete the picture; the chat log and machine
 snapshots under `system/` are the person's and are not readable.
+
+`initialize` waits up to 3.5 s (`VIBEOS_INIT_WAIT_MS`) for the tab's first tools
+frame so the instructions can ride the initialize result — MCP has no second
+chance to send them. A tab that pairs later gets them to the next client that
+connects; the current one works from the tool descriptions, and stderr says so once.
 
 ## Failure behaviour
 

@@ -16,7 +16,9 @@ is a stdio MCP server that dials the same relay with `relay-socket.mjs` (redials
 
 **Frame contract** (README.md has the table): first frame `{hello:'agent', token}`
 (never in a url); `{want:'tools'}` on EVERY connect and the tab answers
-`{tools:[…]}` — its `TOOL_SCHEMAS` verbatim, so there is no second API here;
+`{tools:[…], instructions}` — its `TOOL_SCHEMAS` verbatim plus the OS map, which
+becomes the MCP server's `instructions` (initialize waits ≤3.5 s for the frame; the
+SDK's private `_instructions`/`_oninitialize` are used, pinned by e2e); no second API here;
 `{id, tool, input}` → `{id, result}` | `{id, error}`; relay close codes: 4001 another
 package took this token (final), 4002 peer gone (retry), 4003 revoked (final).
 The hello reply carries the relay function `instance`; `{ping:N}` every 30 s is
