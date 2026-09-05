@@ -43,7 +43,9 @@ the ws-drops-sends-on-CLOSING trap. Against the live route, both a raw stdio cli
 and `mcpt tools/call` were verified on 2026-09-04. `live-tab.mjs` drives a real
 vibeos.sh/app tab in a headless Chrome (puppeteer-core, not shipped) to pair a
 token for a full live e2e: tab → relay → npm package → mcpt; last green 2026-09-04
-16:25 PDT on vibeos-mcp@0.1.6.
+18:55 PDT on vibeos-mcp@0.1.8 via the durable relay (3/3 calls 25 s apart, separate
+processes). A tab reloaded mid-deploy can run a stale kernel: pane says Waiting with
+no relay instance while no relay has it; reload again.
 
 ## Ownership
 
