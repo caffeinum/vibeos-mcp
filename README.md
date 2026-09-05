@@ -42,7 +42,7 @@ Between the tab and this package. The relay does not interpret any of it.
 | agent → tab | `{"want":"tools","agent":"<client name>"}` | sent on every (re)connect, and again after MCP initialize once the client's name is known (empty before) |
 | tab → agent | `{"tools":[{name,description,parameters}]}` | `TOOL_SCHEMAS`, verbatim |
 | agent → tab | `{"id":N,"tool":"name","input":{...}}` | a call |
-| tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer |
+| tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer; a result with `image:{mimeType,data}` (base64) reaches the MCP client as image content, the other fields as text |
 | relay → either | `{"paired":true\|false,"instance":"<id>"}` | the relay's answer to the hello: is the other side already there, and which relay function instance this is (tab and agent must land on the same one) |
 | agent → relay | `{"ping":N}` | every 30 s; a relay that names its instance must answer within 10 s or this side redials |
 | relay → agent | `{"pong":N,"instance":"<id>"}` | the relay's answer, never forwarded to the tab |

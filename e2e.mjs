@@ -59,6 +59,7 @@ const { WebSocket } = await import("ws");
 const tab = new WebSocket(url);
 await new Promise((r) => tab.on("open", r));
 tab.send(JSON.stringify({ hello: "tab", token: TOKEN }));
+const PNG1 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=";
 const TOOLS = [
   { name: "list_apps", description: "List apps", parameters: { type: "object", properties: {}, required: [] } },
   { name: "vm_exec", description: "Run a command", parameters: { type: "object", properties: { command: { type: "string" } }, required: ["command"] } },
@@ -76,6 +77,7 @@ tab.on("message", (raw) => {
   }
   if (msg.id == null) return;
   if (msg.tool === "vm_exec") tab.send(JSON.stringify({ id: msg.id, result: `ran: ${msg.input.command}` }));
+  else if (msg.tool === "read_desktop") tab.send(JSON.stringify({ id: msg.id, result: { ok: true, image: { mimeType: "image/png", data: PNG1 }, width: 1, height: 1 } }));
   else tab.send(JSON.stringify({ id: msg.id, result: "notes.js, paint.js" }));
 });
 
@@ -125,6 +127,11 @@ check("parameters passed through as inputSchema",
 
 const call = await rpc(3, "tools/call", { name: "vm_exec", arguments: { command: "uname -m" } });
 check("tools/call round-trips through the tab", call.result?.content?.[0]?.text === "ran: uname -m", JSON.stringify(call.result));
+
+const shot = await rpc(31, "tools/call", { name: "read_desktop", arguments: {} });
+check("an image result becomes MCP image content plus the rest as text",
+  shot.result?.content?.[0]?.type === "image" && shot.result.content[0].mimeType === "image/png" && shot.result.content[0].data === PNG1 && /"width":1/.test(shot.result.content[1]?.text ?? ""),
+  JSON.stringify(shot.result).slice(0, 200));
 
 // the failure that matters: tab gone must error, not hang
 tab.close();

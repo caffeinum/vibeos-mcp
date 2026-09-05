@@ -233,6 +233,18 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: String(msg.error) }], isError: true };
   }
   const result = msg.result ?? msg.output ?? "";
+  // A result carrying an image (read_desktop) reaches the client as MCP image
+  // content, which Claude Code renders; the other fields stay alongside as
+  // text so width/height/notes are not lost.
+  if (result && typeof result === "object" && typeof result.image?.data === "string" && typeof result.image?.mimeType === "string") {
+    const { image, ...rest } = result;
+    return {
+      content: [
+        { type: "image", data: image.data, mimeType: image.mimeType },
+        { type: "text", text: JSON.stringify(rest) },
+      ],
+    };
+  }
   return {
     content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result) }],
   };
