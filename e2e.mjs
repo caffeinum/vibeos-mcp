@@ -198,10 +198,13 @@ child3.stderr.on("data", (d) => { err3 += d; });
 const w3 = wire(child3);
 await w3.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
 child3.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+const inflightP = w3.rpc(9, "tools/call", { name: "list_apps", arguments: {} });
 await new Promise((r) => setTimeout(r, 2500));
+const inflight3 = await inflightP;
 check("an unreachable first relay falls through to the next", /unreachable, trying ws:\/\/127\.0\.0\.1/.test(err3) && (dials.get(BYE_TOKEN) ?? 0) >= 1, err3.slice(0, 200));
 const revoked = await w3.rpc(2, "tools/call", { name: "list_apps", arguments: {} });
 check("a bye:4003 frame reads as revoked", revoked.result?.isError && /revoked/.test(revoked.result?.content?.[0]?.text ?? ""), JSON.stringify(revoked).slice(0, 160));
+check("in-flight call at the bye got the reason, not 'disconnected mid-call'", !/disconnected mid-call/.test(JSON.stringify(inflight3)), JSON.stringify(inflight3).slice(0, 160));
 check("and is final: no redial after bye", dials.get(BYE_TOKEN) === 1, `dials=${dials.get(BYE_TOKEN)}`);
 
 const big = await w2.rpc(5, "tools/call", { name: "vm_exec", arguments: { command: "x".repeat(130 * 1024) } });

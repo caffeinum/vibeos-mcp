@@ -151,7 +151,9 @@ export class RelaySocket {
           this.inner = null;
           try { inner.close(); } catch { /* already gone */ }
           this.open = false;
-          this.onGap(false);
+          // No onGap(false) first: that fails in-flight calls with the
+          // generic "disconnected mid-call", and the caller never learns
+          // that another vibeos-mcp took the token. end() names the reason.
           this.end(FINAL[msg.bye]);
           return;
         }
@@ -167,6 +169,12 @@ export class RelaySocket {
       gone_once = true;
       this.open = false;
       this.stopHeartbeat();
+      // A final close names its reason to in-flight calls (via onEnd) instead
+      // of the generic gap message — see the bye branch above.
+      if (FINAL[code]) {
+        this.end(FINAL[code]);
+        return;
+      }
       this.onGap(false);
       // 4003 is the desktop revoking this token in Settings: final, not a
       // gap. Redialing would attach this side alone and every call would be
@@ -175,10 +183,6 @@ export class RelaySocket {
       // too: redialing displaced it back, it redialed, and the two flapped
       // every 0.5-2 s for life with neither completing a call — and the tab's
       // answer for one's call id could land in the other's pending slot.
-      if (FINAL[code]) {
-        this.end(FINAL[code]);
-        return;
-      }
       // Never opened: this relay is unreachable, try the next one. A relay
       // that was open and dropped (the ~800 s cut, the 2 h API Gateway limit)
       // is redialed as is.
