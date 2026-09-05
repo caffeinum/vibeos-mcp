@@ -32,9 +32,11 @@ must answer fast (empty if no tab, then `list_changed`): Claude Code times out a
 slow list and shows the server as broken.
 
 **A token is root on that desktop**: edit_file on the OS source, vm_exec in the
-machine. Per tab (sessionStorage), survives `reload_os` — the tab resumes it and
-this package reconnects, list_changed follows — dies with the tab or a hand
-reload, revocable in the pane. A 7-day remembered token is landing's next push.
+machine. Remembered in the browser for 7 days (localStorage + expiry): reload_os,
+hand reloads and closed tabs are gaps this package rides (redial, re-ask tools,
+list_changed); a second tab offers take-over instead of displacing; "Forget this
+agent" or expiry revokes (4003 to a connected package). Verified live 2026-09-04
+22:40 PDT on landing 4e41272.
 
 ## Proof
 

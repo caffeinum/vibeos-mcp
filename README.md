@@ -8,8 +8,9 @@ supplies the tools and the machine; your agent supplies the model.
 claude mcp add vibeos -- npx vibeos-mcp --token <token>
 ```
 
-Get the token from **Settings → Capabilities** in the desktop. It is one token
-per tab session: it dies when the tab closes, and *Revoke* kills it immediately.
+Get the token from **Settings → Capabilities** in the desktop. It is remembered
+in that browser for seven days — reloads and closed tabs keep the pairing —
+and *Forget this agent* ends it at once.
 
 ## Why a relay exists
 
@@ -96,12 +97,13 @@ from one doing slow work, and the user cannot tell the difference.
   `4002` at once (not on the next send), so the call fails with the same note.
 - A second `vibeos-mcp` on the same token (close code 4001): final for the
   first one. Stop one, or pair a new token.
-- `reload_os` (the desktop rebooting after a kernel or `os.css` edit) keeps the
-  pairing: the tab resumes the same token after boot and this package
-  reconnects on its own. A call made while the page is down fails with
-  `peer not connected`; call again a few seconds later. A hand reload or a
-  closed tab still revokes (4003), and driving the desktop again needs a new
-  token from Settings > Capabilities.
+- The pairing outlives the tab. The token is remembered in that browser for
+  seven days: `reload_os`, a hand reload or a closed tab only open a gap — calls
+  in it fail with `peer not connected` — and a tab back on the same token
+  answers again; this package reconnects on its own. A second tab of the same
+  browser offers *Take over here* rather than dialing over the first, and the
+  first is told. *Forget this agent* in the pane, or the expiry, ends it: a
+  connected package reads revoked (4003); one that dials afterwards finds no tab.
 - Revoked in Settings (close code 4003): final. No redial; every later call
   and `tools/list` say the desktop revoked the token.
 
