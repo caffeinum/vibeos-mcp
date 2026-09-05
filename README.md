@@ -42,7 +42,7 @@ Between the tab and this package. The relay does not interpret any of it.
 | agent → tab | `{"want":"tools","agent":"<client name>"}` | sent on every (re)connect, and again after MCP initialize once the client's name is known (empty before) |
 | tab → agent | `{"tools":[{name,description,parameters}]}` | `TOOL_SCHEMAS`, verbatim |
 | agent → tab | `{"id":N,"tool":"name","input":{...}}` | a call |
-| tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer; a result with `image:{mimeType,data}` (base64) reaches the MCP client as image content, the other fields as text |
+| tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer; any `{mime,base64}` or `{mimeType,data}` object in a result, at any depth, reaches the MCP client as image content and `{mime:"text/plain",text}` as a text block, each replaced in the JSON by a marker; never a data: url in text |
 | relay → either | `{"paired":true\|false,"instance":"<id>"}` | the relay's answer to the hello: is the other side already there, and which relay function instance this is (tab and agent must land on the same one) |
 | agent → relay | `{"ping":N}` | every 30 s; a relay that names its instance must answer within 10 s or this side redials |
 | relay → agent | `{"pong":N,"instance":"<id>"}` | the relay's answer, never forwarded to the tab |
@@ -62,6 +62,14 @@ redialed as is. A call whose frame exceeds 128 KB is refused with an error namin
 the size (API Gateway closes the sender above that); the tab does the same for
 results. An API Gateway `{"message":"Internal server error",…}` frame (a
 throttled lambda) fails in-flight calls loudly rather than vanishing.
+
+## Seeing the desktop
+
+`read_desktop` returns the open windows, the dock and the machine state as
+structured text, and the machine's screen (the VM's VGA canvas) as an image —
+JPEG, at most 1024 wide, kept under about 110 KB for the relay. The desktop's
+own windows are DOM, which the tab cannot rasterise without a large vendor
+library, so they come back as text (a window's text or trimmed DOM), not pixels.
 
 ## Failure behaviour
 

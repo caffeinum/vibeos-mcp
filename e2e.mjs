@@ -77,7 +77,8 @@ tab.on("message", (raw) => {
   }
   if (msg.id == null) return;
   if (msg.tool === "vm_exec") tab.send(JSON.stringify({ id: msg.id, result: `ran: ${msg.input.command}` }));
-  else if (msg.tool === "read_desktop") tab.send(JSON.stringify({ id: msg.id, result: { ok: true, image: { mimeType: "image/png", data: PNG1 }, width: 1, height: 1 } }));
+  else if (msg.tool === "read_desktop" && msg.input.alt) tab.send(JSON.stringify({ id: msg.id, result: { ok: true, image: { mimeType: "image/jpeg", data: PNG1 }, width: 2, height: 2 } }));
+  else if (msg.tool === "read_desktop") tab.send(JSON.stringify({ id: msg.id, result: { ok: true, windows: [{ title: "Notes", z: 1 }], screen: { mime: "image/png", base64: PNG1, width: 1, height: 1 }, window: { title: "Notes", text: { mime: "text/plain", text: "hello from notes" } } } }));
   else tab.send(JSON.stringify({ id: msg.id, result: "notes.js, paint.js" }));
 });
 
@@ -129,9 +130,16 @@ const call = await rpc(3, "tools/call", { name: "vm_exec", arguments: { command:
 check("tools/call round-trips through the tab", call.result?.content?.[0]?.text === "ran: uname -m", JSON.stringify(call.result));
 
 const shot = await rpc(31, "tools/call", { name: "read_desktop", arguments: {} });
-check("an image result becomes MCP image content plus the rest as text",
-  shot.result?.content?.[0]?.type === "image" && shot.result.content[0].mimeType === "image/png" && shot.result.content[0].data === PNG1 && /"width":1/.test(shot.result.content[1]?.text ?? ""),
-  JSON.stringify(shot.result).slice(0, 200));
+const c = shot.result?.content ?? [];
+check("{mime,base64} anywhere in a result becomes MCP image content",
+  c[1]?.type === "image" && c[1].mimeType === "image/png" && c[1].data === PNG1, JSON.stringify(c).slice(0, 200));
+check("{mime:text/plain,text} becomes a text block; the JSON keeps markers, width, windows, no base64",
+  c[2]?.type === "text" && c[2].text === "hello from notes" && /"screen":\{[^}]*"width":1[^}]*"content":"\[image 1\]"/.test(c[0]?.text ?? "") && /"windows":\[\{"title":"Notes"/.test(c[0]?.text ?? "") && !c[0].text.includes(PNG1),
+  c[0]?.text?.slice(0, 300));
+
+const shot2 = await rpc(32, "tools/call", { name: "read_desktop", arguments: { alt: true } });
+check("image:{mimeType,data} is lifted too",
+  shot2.result?.content?.[1]?.type === "image" && shot2.result.content[1].mimeType === "image/jpeg" && /"width":2/.test(shot2.result.content[0]?.text ?? ""), JSON.stringify(shot2.result).slice(0, 200));
 
 // the failure that matters: tab gone must error, not hang
 tab.close();

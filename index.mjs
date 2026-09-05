@@ -172,7 +172,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.8" },
+  { name: "vibeos", version: "0.1.9" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -208,6 +208,30 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   };
 });
 
+function liftMedia(value, blocks) {
+  if (!value || typeof value !== "object") return value;
+  // Both spellings the tab has used: {mime, base64} and {mimeType, data}.
+  if (typeof value.mime === "string" && typeof value.base64 === "string") {
+    blocks.push({ type: "image", data: value.base64, mimeType: value.mime });
+    const { base64, ...rest } = value;
+    return { ...rest, content: `[image ${blocks.length}]` };
+  }
+  if (typeof value.mimeType === "string" && value.mimeType.startsWith("image/") && typeof value.data === "string") {
+    blocks.push({ type: "image", data: value.data, mimeType: value.mimeType });
+    const { data, ...rest } = value;
+    return { ...rest, content: `[image ${blocks.length}]` };
+  }
+  if (value.mime === "text/plain" && typeof value.text === "string") {
+    blocks.push({ type: "text", text: value.text });
+    const { text, ...rest } = value;
+    return { ...rest, content: `[text ${blocks.length}]` };
+  }
+  if (Array.isArray(value)) return value.map((v) => liftMedia(v, blocks));
+  const out = {};
+  for (const [k, v] of Object.entries(value)) out[k] = liftMedia(v, blocks);
+  return out;
+}
+
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (ended) return { content: [{ type: "text", text: `vibeos: ${ended}` }], isError: true };
   await settled(3000);
@@ -233,17 +257,15 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: String(msg.error) }], isError: true };
   }
   const result = msg.result ?? msg.output ?? "";
-  // A result carrying an image (read_desktop) reaches the client as MCP image
-  // content, which Claude Code renders; the other fields stay alongside as
-  // text so width/height/notes are not lost.
-  if (result && typeof result === "object" && typeof result.image?.data === "string" && typeof result.image?.mimeType === "string") {
-    const { image, ...rest } = result;
-    return {
-      content: [
-        { type: "image", data: image.data, mimeType: image.mimeType },
-        { type: "text", text: JSON.stringify(rest) },
-      ],
-    };
+  // Media in a result — any {mime, base64} or {mimeType, data} object, at any depth, e.g.
+  // read_desktop's screen — reaches the client as MCP image content, which
+  // Claude Code renders; {mime:'text/plain', text} becomes a text block. Each
+  // is replaced in the JSON by a marker so the surrounding fields keep their
+  // place and nothing is sent as a data: url in text.
+  const blocks = [];
+  const lifted = liftMedia(result, blocks);
+  if (blocks.length) {
+    return { content: [{ type: "text", text: JSON.stringify(lifted) }, ...blocks] };
   }
   return {
     content: [{ type: "text", text: typeof result === "string" ? result : JSON.stringify(result) }],
