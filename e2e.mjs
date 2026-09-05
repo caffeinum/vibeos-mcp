@@ -76,6 +76,7 @@ tab.on("message", (raw) => {
     return;
   }
   if (msg.id == null) return;
+  if (msg.tool === "freeze") return; // a busy main thread: no answer, ever
   if (msg.tool === "vm_exec") tab.send(JSON.stringify({ id: msg.id, result: `ran: ${msg.input.command}` }));
   else if (msg.tool === "read_desktop" && msg.input.alt) tab.send(JSON.stringify({ id: msg.id, result: { ok: true, image: { mimeType: "image/jpeg", data: PNG1 }, width: 2, height: 2 } }));
   else if (msg.tool === "read_desktop") tab.send(JSON.stringify({ id: msg.id, result: { ok: true, windows: [{ title: "Notes", z: 1 }], screen: { mime: "image/png", base64: PNG1, width: 1, height: 1 }, window: { title: "Notes", text: { mime: "text/plain", text: "hello from notes" } } } }));
@@ -84,7 +85,7 @@ tab.on("message", (raw) => {
 
 // --- the package, over real MCP stdio ---
 const child = spawn("node", ["index.mjs", "--token", TOKEN, "--relay", url], {
-  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "inherit"],
+  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "inherit"], env: { ...process.env, VIBEOS_CALL_TIMEOUT_MS: "1500" },
 });
 const wire = (child) => {
   let buf = "";
@@ -140,6 +141,13 @@ check("{mime:text/plain,text} becomes a text block; the JSON keeps markers, widt
 const shot2 = await rpc(32, "tools/call", { name: "read_desktop", arguments: { alt: true } });
 check("image:{mimeType,data} is lifted too",
   shot2.result?.content?.[1]?.type === "image" && shot2.result.content[1].mimeType === "image/jpeg" && /"width":2/.test(shot2.result.content[0]?.text ?? ""), JSON.stringify(shot2.result).slice(0, 200));
+
+const tf = Date.now();
+const frozen = await rpc(33, "tools/call", { name: "freeze", arguments: {} });
+check("a tab that never answers fails the call at the deadline, as a tool error",
+  Date.now() - tf < 4000 && frozen.result?.isError && /did not answer freeze within 2 s/.test(frozen.result?.content?.[0]?.text ?? ""), `${Date.now() - tf}ms ${JSON.stringify(frozen).slice(0, 160)}`);
+const stillAlive = await rpc(34, "tools/call", { name: "list_apps", arguments: {} });
+check("and the next call on the same socket still works", stillAlive.result?.content?.[0]?.text === "notes.js, paint.js", JSON.stringify(stillAlive).slice(0, 120));
 
 // the failure that matters: tab gone must error, not hang
 tab.close();

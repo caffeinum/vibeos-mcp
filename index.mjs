@@ -57,6 +57,9 @@ if (process.stdin.isTTY) {
   );
 }
 
+/** How long a call may wait for the tab before it fails; tests shorten it. */
+const CALL_TIMEOUT_MS = Number(process.env.VIBEOS_CALL_TIMEOUT_MS) || 120_000;
+
 /** Tool calls awaiting an answer from the tab, by id. */
 const pending = new Map();
 let nextId = 1;
@@ -172,7 +175,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.11" },
+  { name: "vibeos", version: "0.1.12" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -239,8 +242,20 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     return { content: [{ type: "text", text: noTab() }], isError: true };
   }
   const id = nextId++;
+  // A tab whose main thread is busy (a catastrophic regex in search_file
+  // measured ~50 s) answers nothing, and the relay keeps ponging on its
+  // behalf, so nothing else would ever end the call. vm_exec has its own
+  // budget (timeout_s, up to 600) that this must not cut short.
+  const budget = request.params.name === "vm_exec"
+    ? Math.max(CALL_TIMEOUT_MS, ((request.params.arguments?.timeout_s ?? 20) + 30) * 1000)
+    : CALL_TIMEOUT_MS;
   const answer = new Promise((resolve, reject) => {
-    pending.set(id, { resolve, reject });
+    const timer = setTimeout(() => {
+      if (!pending.has(id)) return;
+      pending.delete(id);
+      reject(new Error(`the desktop did not answer ${request.params.name} within ${Math.round(budget / 1000)} s — the tab may be busy or frozen; it may still finish the call`));
+    }, budget);
+    pending.set(id, { resolve: (m) => { clearTimeout(timer); resolve(m); }, reject: (e) => { clearTimeout(timer); reject(e); } });
   });
 
   try {

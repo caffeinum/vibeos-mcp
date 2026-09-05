@@ -78,6 +78,10 @@ from one doing slow work, and the user cannot tell the difference.
 
 - Relay drops mid-call (the ~800 s cut): in-flight calls reject with a note that
   the desktop may still have run the tool. The socket redials in place.
+- The tab never answers (its main thread is busy — a catastrophic regex in
+  `search_file` measured about 50 s): the call fails at a deadline, 120 s by
+  default (`VIBEOS_CALL_TIMEOUT_MS`), or `timeout_s` + 30 s for `vm_exec`, with
+  a note that the desktop may still finish it.
 - No tab paired: `tools/list` answers within 2 s with an empty list — Claude Code
   gives up on a slow list and shows the server as broken — and sends
   `notifications/tools/list_changed` the moment the tab's schemas arrive. A
