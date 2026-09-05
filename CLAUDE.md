@@ -32,7 +32,9 @@ must answer fast (empty if no tab, then `list_changed`): Claude Code times out a
 slow list and shows the server as broken.
 
 **A token is root on that desktop**: edit_file on the OS source, vm_exec in the
-machine. Per tab, in memory only, dies with the tab, revocable in the pane.
+machine. Per tab (sessionStorage), survives `reload_os` — the tab resumes it and
+this package reconnects, list_changed follows — dies with the tab or a hand
+reload, revocable in the pane. A 7-day remembered token is landing's next push.
 
 ## Proof
 

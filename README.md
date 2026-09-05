@@ -65,11 +65,16 @@ throttled lambda) fails in-flight calls loudly rather than vanishing.
 
 ## Seeing the desktop
 
-`read_desktop` returns the open windows, the dock and the machine state as
-structured text, and the machine's screen (the VM's VGA canvas) as an image —
-JPEG, at most 1024 wide, kept under about 110 KB for the relay. The desktop's
-own windows are DOM, which the tab cannot rasterise without a large vendor
-library, so they come back as text (a window's text or trimmed DOM), not pixels.
+`read_desktop` returns the open windows (top first, with geometry), the dock
+and the machine state as structured text; `{window}` gives one window's body as
+text (password and hidden values never), `{window, dom:true}` its sanitised
+outerHTML, and `{screen:"image"}` the machine's screen (the VM's VGA canvas) as
+a JPEG at most 1024 wide and under about 110 KB for the relay, with the text
+console's rows alongside. The desktop's own windows are DOM, which the tab
+cannot rasterise without a large vendor library, so they come back as text, not
+pixels. `list_themes`, `list_files` and `search_file` over a directory or glob
+(in a worker, 3 s deadline) complete the picture; the chat log and machine
+snapshots under `system/` are the person's and are not readable.
 
 ## Failure behaviour
 
@@ -91,10 +96,12 @@ from one doing slow work, and the user cannot tell the difference.
   `4002` at once (not on the next send), so the call fails with the same note.
 - A second `vibeos-mcp` on the same token (close code 4001): final for the
   first one. Stop one, or pair a new token.
-- The tab closes or reloads — `reload_os` included, since the token lives in
-  the tab and dies with it: the tab sends the revoke on its way out, so this
-  reads as revoked (4003), not as a relay outage. Driving the desktop again
-  needs a new token from Settings > Capabilities.
+- `reload_os` (the desktop rebooting after a kernel or `os.css` edit) keeps the
+  pairing: the tab resumes the same token after boot and this package
+  reconnects on its own. A call made while the page is down fails with
+  `peer not connected`; call again a few seconds later. A hand reload or a
+  closed tab still revokes (4003), and driving the desktop again needs a new
+  token from Settings > Capabilities.
 - Revoked in Settings (close code 4003): final. No redial; every later call
   and `tools/list` say the desktop revoked the token.
 
