@@ -52,6 +52,14 @@ A TTY run with no token prints the link and waits, exits 0 on pairing.
 Verified end to end on prod 2026-09-09 11:58 PDT (landing 546b3e2, npm 0.2.2):
 claude -p got the link, the tab stripped the fragment before any dial, refuse
 dialed nothing, accept dialed once, and the next claude -p ran uname -m (i686).
+Self-hosted (container) verified 2026-09-09 against vibeos-docker rc4 on a
+non-default port 8213: a bare no-relay link is REFUSED by a container desktop
+(its `__vibeosRelayDefault` is origin-relative, so absence means the apigw
+default = mismatch), naming the real published port and the `--relay ws://…:8213/
+api/mcp/relay` recovery command, 0 dials, nothing stored; a `--relay`-matched
+link gets consent, 1 dial, and vm_exec uname -m → i686. Contract: a link with no
+`&relay=` means the public default (a positive statement), so a container tab
+treats it as a mismatch, never as "unknown".
 `npx vibeos-mcp forget` deletes the file. Leak model: a leaked link pairs the
 OPENER's desktop to the sender's agent — the warning says "you are handing this
 agent your desktop", not "keep this secret".
