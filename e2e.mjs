@@ -3,7 +3,10 @@
  * stdio. Proves frames actually round-trip — a server that starts proves nothing.
  */
 import { WebSocketServer } from "ws";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 const TOKEN = "c".repeat(64);
 const BYE_TOKEN = "e".repeat(64);
@@ -243,6 +246,47 @@ check("and is final: no redial after bye", dials.get(BYE_TOKEN) === 1, `dials=${
 
 const big = await w2.rpc(5, "tools/call", { name: "vm_exec", arguments: { command: "x".repeat(130 * 1024) } });
 check("a call over 128 KB is refused with the size, not sent", big.result?.isError && /exceeds the relay's 131072 byte limit/.test(big.result?.content?.[0]?.text ?? ""), JSON.stringify(big).slice(0, 160));
+
+// --- no token at all: the package mints one, the link pairs a desktop
+const home = mkdtempSync(join(tmpdir(), "vibeos-mcp-e2e-"));
+writeFileSync(join(home, "token.json"), JSON.stringify({ token: "f".repeat(64), created: 1, expires: 2 }));
+const child4 = spawn("node", ["index.mjs", "--relay", url], {
+  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, VIBEOS_HOME: home, VIBEOS_APP: "https://vibeos.test/app", VIBEOS_INIT_WAIT_MS: "300" },
+});
+let err4 = ""; child4.stderr.on("data", (d) => { err4 += d; });
+const w4 = wire(child4);
+const init4 = await w4.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+child4.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+const minted = (init4.result?.instructions ?? "").match(/https:\/\/vibeos\.test\/app#pair=([0-9a-f]{64})/)?.[1];
+const stored = JSON.parse(readFileSync(join(home, "token.json"), "utf8"));
+check("with no token, initialize's instructions carry the pair link with a freshly minted token", !!minted && minted === stored.token && stored.expires > Date.now(), (init4.result?.instructions ?? "").slice(0, 160));
+check("a stale token.json was replaced, not dialed", minted !== "f".repeat(64), minted);
+check("the link says the agent is root on that desktop", /root on that desktop/.test(init4.result?.instructions ?? ""), "");
+check("the link carries no relay when on the default one... or the given one when not", /&relay=ws%3A%2F%2F127\.0\.0\.1/.test(init4.result?.instructions ?? ""), (init4.result?.instructions ?? "").slice(0, 200));
+const list4 = await w4.rpc(2, "tools/list", {});
+check("tools/list before pairing offers pair_desktop and nothing else", (list4.result?.tools ?? []).map((t) => t.name).join(",") === "pair_desktop", JSON.stringify(list4.result).slice(0, 120));
+const pairCall = await w4.rpc(3, "tools/call", { name: "pair_desktop", arguments: {} });
+check("pair_desktop returns the link", (pairCall.result?.content?.[0]?.text ?? "").includes(`#pair=${minted}`), JSON.stringify(pairCall).slice(0, 160));
+// the desktop opens the link: it pairs with the minted token and sends its tools
+const wants = [];
+const tab4 = new WebSocket(url);
+await new Promise((r) => tab4.on("open", r));
+tab4.send(JSON.stringify({ hello: "tab", token: minted }));
+tab4.on("message", (raw) => { const m = JSON.parse(raw.toString("utf8")); if (m.want === "tools") { wants.push(m); tab4.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS })); } });
+tab4.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
+await new Promise((r) => setTimeout(r, 600));
+check("pairing flips: list_changed, then the desktop's tools", w4.notifications.includes("notifications/tools/list_changed") && (await w4.rpc(4, "tools/list", {})).result?.tools?.map((t) => t.name).join(",") === "list_apps,vm_exec", JSON.stringify(w4.notifications));
+const pairedCall = await w4.rpc(5, "tools/call", { name: "pair_desktop", arguments: {} });
+check("pair_desktop after pairing says so", /already paired/.test(pairedCall.result?.content?.[0]?.text ?? ""), JSON.stringify(pairedCall).slice(0, 120));
+child4.kill(); tab4.close();
+// the same machine remembers the token for the next MCP client
+const child5 = spawn("node", ["index.mjs", "--relay", url], { cwd: import.meta.dirname, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, VIBEOS_HOME: home, VIBEOS_APP: "https://vibeos.test/app", VIBEOS_INIT_WAIT_MS: "300" } });
+const w5 = wire(child5);
+const init5 = await w5.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+check("a second start reuses the remembered token", (init5.result?.instructions ?? "").includes(minted), (init5.result?.instructions ?? "").slice(0, 120));
+child5.kill();
+const forgot = spawnSync("node", ["index.mjs", "forget"], { cwd: import.meta.dirname, env: { ...process.env, VIBEOS_HOME: home }, encoding: "utf8" });
+check("`forget` deletes the remembered token", forgot.status === 0 && /forgot/.test(forgot.stderr) && !existsSync(join(home, "token.json")), forgot.stderr);
 
 child2.kill(); tab2.close(); child3.kill(); wss.close();
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");

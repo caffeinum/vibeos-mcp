@@ -21,6 +21,7 @@ import {
   ListToolsRequestSchema,
 } from "@modelcontextprotocol/sdk/types.js";
 import { RelaySocket, FRAME_MAX_BYTES } from "./relay-socket.mjs";
+import { loadToken, mintToken, forgetToken, storePath } from "./token-store.mjs";
 
 const args = process.argv.slice(2);
 const flag = (name) => {
@@ -28,33 +29,53 @@ const flag = (name) => {
   return i >= 0 ? args[i + 1] : undefined;
 };
 
-const token = flag("--token") ?? process.env.VIBEOS_TOKEN;
 // Comma-separated, in order of preference: a relay that cannot be reached at
-// all falls through to the next. One url by default until the durable relay
-// is announced.
-// The durable relay (API Gateway + DynamoDB, no instance affinity) first; the
-// vercel function, which pairs in memory per instance, only as a fallback.
+// all falls through to the next. The durable relay (API Gateway + DynamoDB, no
+// instance affinity) first; the vercel function, which pairs in memory per
+// instance, only as a fallback.
 const DEFAULT_RELAYS = "wss://2yetm9bvy2.execute-api.us-east-1.amazonaws.com/prod,wss://vibeos.sh/api/mcp/relay";
 const relayUrls = (flag("--relay") ?? process.env.VIBEOS_RELAY ?? DEFAULT_RELAYS)
   .split(",").map((u) => u.trim()).filter(Boolean);
+const APP_URL = process.env.VIBEOS_APP ?? "https://vibeos.sh/app";
 
-if (!token || !/^[0-9a-f]{64}$/.test(token)) {
-  // stderr, not stdout: stdout is the MCP transport and any stray byte there
-  // corrupts the protocol.
-  process.stderr.write(
-    "vibeos-mcp: --token must be the 64-hex token from Settings > Capabilities\n"
-  );
-  process.exit(2);
+if (args[0] === "forget") {
+  process.stderr.write(forgetToken() ? `vibeos-mcp: forgot the token in ${storePath()}\n` : "vibeos-mcp: no remembered token\n");
+  process.exit(0);
 }
 
+// Where the token comes from decides what "no tab" means: a token the person
+// typed (--token / VIBEOS_TOKEN) belongs to a desktop they already paired; a
+// token minted here has no desktop yet, and the way to get one is the link.
+const givenToken = flag("--token") ?? process.env.VIBEOS_TOKEN;
+if (givenToken !== undefined && !/^[0-9a-f]{64}$/.test(givenToken)) {
+  // stderr, not stdout: stdout is the MCP transport and any stray byte there
+  // corrupts the protocol.
+  process.stderr.write("vibeos-mcp: --token must be the 64-hex token from Settings > Capabilities (or omit it: the link pairs a desktop)\n");
+  process.exit(2);
+}
+const remembered = givenToken ? null : loadToken();
+const minted = givenToken || remembered ? null : mintToken();
+const token = givenToken ?? remembered?.token ?? minted.token;
+const tokenIsOurs = !givenToken;
+/** The one link that pairs a desktop to this token; the token rides the fragment, never the wire to vibeos.sh. */
+const pairUrl = `${APP_URL}#pair=${token}` +
+  (relayUrls[0] !== DEFAULT_RELAYS.split(",")[0] ? `&relay=${encodeURIComponent(relayUrls[0])}` : "");
+const pairLine = () =>
+  `no vibeOS desktop is paired yet. Open ${pairUrl} in a browser to pair one — an agent with this link is root on that desktop (it can edit the OS and run commands in its machine) for 7 days; the desktop's Settings > Capabilities can forget it.`;
+
 if (process.stdin.isTTY) {
-  // Run by hand in a terminal, not by an MCP client: it would sit waiting for
-  // JSON-RPC on stdin forever and look hung. Say so, keep running anyway.
+  // Run by hand in a terminal, not by an MCP client. Say what to do; in the
+  // no-token case also wait for the desktop to pair, then leave the token
+  // remembered for the MCP client to use.
   process.stderr.write(
-    "vibeos-mcp: this is an MCP server — it speaks to a client over stdin, " +
-    "not to you. Register it instead:\n" +
-    `  claude mcp add vibeos -- npx vibeos-mcp --token ${token}\n` +
-    "(Cursor/Codex: same command in their MCP config.) Ctrl-C to quit.\n"
+    tokenIsOurs
+      ? `vibeos-mcp: ${minted ? "minted a token" : "using the remembered token"} (${storePath()}).\n` +
+        `  pair a desktop:  ${pairUrl}\n` +
+        "  then register:   claude mcp add vibeos -- npx vibeos-mcp\n" +
+        "waiting for the desktop… (Ctrl-C to quit)\n"
+      : "vibeos-mcp: this is an MCP server — it speaks to a client over stdin, not to you. Register it instead:\n" +
+        `  claude mcp add vibeos -- npx vibeos-mcp --token ${token}\n` +
+        "(Cursor/Codex: same command in their MCP config.) Ctrl-C to quit.\n"
   );
 }
 
@@ -72,8 +93,9 @@ let instructionsLate = false;
 /** What the relay last said about the tab: paired or not, on which instance. */
 let paired = false;
 let relayInstance = undefined;
-const noTab = () =>
-  `no vibeOS tab is paired with this token${relayInstance ? ` (relay instance ${relayInstance} — the Capabilities pane must show the same one)` : ""} — open vibeos.sh/app › Settings › Capabilities`;
+const noTab = () => tokenIsOurs
+  ? pairLine()
+  : `no vibeOS tab is paired with this token${relayInstance ? ` (relay instance ${relayInstance} — the Capabilities pane must show the same one)` : ""} — open vibeos.sh/app › Settings › Capabilities`;
 /**
  * Resolves once the relay has answered the hello (so `paired` means
  * something) or the tab's schemas have arrived, or after `ms`. A client like
@@ -99,7 +121,7 @@ let ended = null;
 // `sampling` tells the tab whether this client's model can power the desktop's
 // apps (api.ai) when the tab has no model of its own. Known after initialize.
 const canSample = () => !!server.getClientCapabilities?.()?.sampling;
-const askForTools = () => socket.send(JSON.stringify({ want: "tools", agent: agentName, sampling: canSample() }));
+const askForTools = () => socket.send(JSON.stringify({ want: "tools", agent: agentName, sampling: canSample(), pairing: tokenIsOurs && !paired && !toolSchemas.length }));
 
 /** How long an app's api.ai ask may wait on the client's model (a human may approve each). */
 const ASK_TIMEOUT_MS = Number(process.env.VIBEOS_ASK_TIMEOUT_MS) || 120_000;
@@ -200,6 +222,11 @@ const socket = new RelaySocket(relayUrls, {
       }
       const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
+      if (process.stdin.isTTY && tokenIsOurs) {
+        process.stderr.write("vibeos-mcp: paired ✓ — the token is remembered; `claude mcp add vibeos -- npx vibeos-mcp` uses it.\n");
+        socket.close();
+        process.exit(0);
+      }
       if (typeof msg.instructions === "string" && msg.instructions !== instructions) {
         instructions = msg.instructions;
         server._instructions = instructions;
@@ -231,7 +258,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.1.16" },
+  { name: "vibeos", version: "0.2.0" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -252,9 +279,15 @@ server.setRequestHandler(InitializeRequestSchema, async (request) => {
     });
     if (!toolSchemas.length) sawSchemas = null;
   }
-  server._instructions = instructions || undefined;
+  server._instructions = instructions || (tokenIsOurs && !toolSchemas.length ? pairLine() : undefined);
   return originalInitialize(request);
 });
+
+const PAIR_TOOL = {
+  name: "pair_desktop",
+  description: "No vibeOS desktop is paired yet. Returns the link that pairs one to this agent; show it to the person. The desktop's tools appear here once it is paired.",
+  inputSchema: { type: "object", properties: {}, required: [] },
+};
 
 server.setRequestHandler(ListToolsRequestSchema, async () => {
   if (ended) throw new Error(`vibeos: ${ended}`);
@@ -274,7 +307,10 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
   }
   if (!toolSchemas.length) {
     process.stderr.write(`vibeos-mcp: tools/list with no tab schemas yet — ${noTab()}\n`);
-    return { tools: [] };
+    // Not every client shows the server's instructions (mcpt does not), so
+    // the link is also a tool until a desktop pairs; then the real list
+    // replaces it via list_changed.
+    return { tools: tokenIsOurs ? [PAIR_TOOL] : [] };
   }
   // `parameters` passes through as `inputSchema` unchanged: one source of truth
   // for the tool surface, no second API to keep in sync.
@@ -313,6 +349,9 @@ function liftMedia(value, blocks) {
 
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (ended) return { content: [{ type: "text", text: `vibeos: ${ended}` }], isError: true };
+  if (request.params.name === PAIR_TOOL.name && tokenIsOurs) {
+    return { content: [{ type: "text", text: toolSchemas.length ? "a desktop is already paired; its tools are listed now" : pairLine() }] };
+  }
   await settled(3000);
   if (!paired && !toolSchemas.length) {
     return { content: [{ type: "text", text: noTab() }], isError: true };
