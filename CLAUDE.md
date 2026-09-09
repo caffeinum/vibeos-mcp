@@ -19,7 +19,10 @@ is a stdio MCP server that dials the same relay with `relay-socket.mjs` (redials
 `{tools:[…], instructions}` — its `TOOL_SCHEMAS` verbatim plus the OS map, which
 becomes the MCP server's `instructions` (initialize waits ≤3.5 s for the frame; the
 SDK's private `_instructions`/`_oninitialize` are used, pinned by e2e); no second API here;
-`{id, tool, input}` → `{id, result}` | `{id, error}`; the reverse direction `{ask:N, ai:{…}}` →
+`{id, tool, input}` → `{id, result}` | `{id, error}`; an unpaired socket holds a
+registry slot and can ping/receive errors, and two sockets with the same token
+pair with each other (a token is a shared secret, not a name — it reaches only
+the desktop whose tab holds it); the reverse direction `{ask:N, ai:{…}}` →
 `{ask:N, result|error}` is an app's api.ai served by MCP sampling when the client
 declares it (claude code 2.1.261 and mcpt do not — measured 2026-09-05), advertised
 as `sampling` in want:tools; relay close codes: 4001 another
@@ -46,7 +49,9 @@ positive statement the tab relies on: a container desktop with its own
 `__vibeosRelayDefault` refuses a link whose relay, explicit or implied, is not
 its own, naming the `--relay` to use; `VIBEOS_APP` overrides the app url). The
 tab side reads the fragment, `history.replaceState` first, shows the root
-sentence before dialing, and stores it as its remembered token; its unsolicited
+sentence before dialing, and stores it as its remembered token; the fragment
+keeps the token out of the HTTP request, but the pairing hello sends it over the
+ws to the selected relay operator (not "never on the wire": never in the *URL*); its unsolicited
 tools frame is the "paired" signal. want:tools carries `pairing:true` meanwhile.
 A TTY run with no token prints the link and waits, exits 0 on pairing.
 Verified end to end on prod 2026-09-09 11:58 PDT (landing 546b3e2, npm 0.2.2):

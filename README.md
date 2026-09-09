@@ -14,7 +14,10 @@ warning, accept, and the desktop is paired: its tools appear in the agent
 without a restart. The token behind the link is minted on your machine and
 remembered in `~/.vibeos-mcp/token.json` for seven days (the desktop remembers
 it for the same seven — reloads and closed tabs keep the pairing); the token
-rides the link's fragment, which never reaches vibeos.sh. `npx vibeos-mcp forget`
+rides the link's *fragment*, so it stays out of the HTTP request — access logs,
+proxies, `Referer` never see it. It is still sent, once, in the pairing hello
+over the websocket to whichever relay is selected, so that relay's operator sees
+it (vibeos.sh on the default relay; you, on a self-hosted one). `npx vibeos-mcp forget`
 drops it. Starting from the desktop instead — **Settings › Capabilities › Pair**
 — still works: paste the command it shows, which carries `--token`. *Forget this
 agent* in the desktop ends a pairing at once.
@@ -29,6 +32,9 @@ until a desktop is paired.
 An MCP client spawns a subprocess or POSTs to an endpoint. A browser tab can do
 neither — it cannot listen, only dial out. So both ends dial the same relay and
 it pairs them by token and copies frames, parsing nothing beyond the first frame.
+(An unconnected socket still holds a pairing slot and can ping; two sockets that
+present the *same* token pair with each other, so a token is a shared secret,
+not a name — it reaches no desktop but the one whose tab holds it.)
 The default relay is `wss://2yetm9bvy2.execute-api.us-east-1.amazonaws.com/prod`
 (API Gateway + DynamoDB: pairing is durable, so it does not matter which server
 each side lands on), with `wss://vibeos.sh/api/mcp/relay` as fallback. The
@@ -39,11 +45,13 @@ non-default one.
 
 **The token is root on the desktop.** The tool set includes `edit_file` on
 `system/os.js` and `vm_exec`, so anything holding it can rewrite the OS and run
-commands in the VM. It is sent as the first frame and never in a URL, because
-URLs reach access logs, proxies and `Referer` headers.
+commands in the VM. It is sent as the first frame over the websocket, never in a URL, because URLs
+reach access logs, proxies and `Referer` headers — the websocket reaches only
+the relay operator, who sees it either way.
 
-The relay sees every tool call in plaintext. Assume the operator of vibeos.sh
-can read what your agent does on your desktop.
+The relay sees the token and every tool call in plaintext. Assume the operator
+of the relay you select (vibeos.sh by default) can read what your agent does on
+your desktop, and pick a self-hosted relay if that is not acceptable.
 
 ## Frame contract
 
