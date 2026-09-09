@@ -1,0 +1,27 @@
+CLAUDE.md
+  s_ed069581db5338::t_591a442c6aca07 39-52
+README.md
+  s_ed069581db5338::t_7f03af5915684e 8,11-25,55
+index.mjs
+  s_ed069581db5338::t_9220a18c7b4e14 261
+package-lock.json
+  s_ed069581db5338::t_9cad2a9ae37090 3,9
+package.json
+  s_ed069581db5338::t_91b31baee5a830 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "1a7f18df68f0f28e1a2c0fe5a01408d4b908d7fb",
+  "prompts": {},
+  "sessions": {
+    "s_ed069581db5338": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec6cf2bb-a5dd-4b1c-a8c7-0643ed9fef7c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Aleksey Bykhun <theisease@gmail.com>"
+    }
+  }
+}
