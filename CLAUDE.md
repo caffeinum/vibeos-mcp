@@ -95,6 +95,9 @@ commit, `git tag vX.Y.Z && git push origin vX.Y.Z`. 0.1.2 was published by hand 
 create the package; 0.1.3+ went through the workflow. `@caffeinum/vibeos-mcp`
 0.1.0/0.1.1 exist from a scoped-token detour and should be deprecated.
 
+A new local module must be added to package.json `files` — 0.2.0/0.2.1 shipped
+without token-store.mjs and crashed at start under npx while the checkout's e2e
+was green; e2e now diffs `npm pack --dry-run` against index.mjs's imports.
 `bin` paths must not start with `./` or npm rewrites them at publish. Local
 `npm view` may 404 fresh versions: ~/.npmrc has a `before=` min-release-age gate;
 override with `npm_config_before=` to check.
