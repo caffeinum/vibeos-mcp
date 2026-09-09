@@ -288,6 +288,18 @@ child5.kill();
 const forgot = spawnSync("node", ["index.mjs", "forget"], { cwd: import.meta.dirname, env: { ...process.env, VIBEOS_HOME: home }, encoding: "utf8" });
 check("`forget` deletes the remembered token", forgot.status === 0 && /forgot/.test(forgot.stderr) && !existsSync(join(home, "token.json")), forgot.stderr);
 
+// --- the tarball carries every local module index.mjs imports (0.2.0 shipped
+// without token-store.mjs and crashed at start for every npx user)
+const pack = spawnSync("npm", ["pack", "--dry-run", "--json"], { cwd: import.meta.dirname, encoding: "utf8" });
+const packed = new Set(JSON.parse(pack.stdout)[0].files.map((f) => f.path));
+const walk = (file, seen = new Set()) => {
+  if (seen.has(file)) return seen; seen.add(file);
+  for (const m of readFileSync(join(import.meta.dirname, file), "utf8").matchAll(/from "\.\/([^"]+)"/g)) walk(m[1], seen);
+  return seen;
+};
+const needed = [...walk("index.mjs")];
+check("npm pack includes every local module index.mjs imports", needed.every((f) => packed.has(f)), `missing: ${needed.filter((f) => !packed.has(f)).join(", ")}`);
+
 child2.kill(); tab2.close(); child3.kill(); wss.close();
 console.log(failures ? `\n${failures} FAILED` : "\nALL PASSED");
 process.exit(failures ? 1 : 0);
