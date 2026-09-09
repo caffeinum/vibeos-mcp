@@ -1,0 +1,23 @@
+e2e.mjs
+  s_ed069581db5338::t_e3dba1ef9c2b71 291-302
+index.mjs
+  s_ed069581db5338::t_b01418ae8d89c3 261
+package.json
+  s_ed069581db5338::t_ec7e8fa33accf3 3,12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.4",
+  "base_commit_sha": "933c6ccc67c311fcf20029012d77cfd0b0cc04ae",
+  "prompts": {},
+  "sessions": {
+    "s_ed069581db5338": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "ec6cf2bb-a5dd-4b1c-a8c7-0643ed9fef7c",
+        "model": "claude-fable-5-1"
+      },
+      "human_author": "Aleksey Bykhun <theisease@gmail.com>"
+    }
+  }
+}
