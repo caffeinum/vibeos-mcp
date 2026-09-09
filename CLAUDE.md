@@ -41,7 +41,10 @@ mints 64 hex locally (`token-store.mjs`, `~/.vibeos-mcp/token.json`, 0600, 7 d;
 `VIBEOS_HOME` overrides for tests; a stale file is re-minted, never dialed), dials
 the relay, and until a desktop pairs the initialize `instructions`, a
 `pair_desktop` tool and every call carry `https://vibeos.sh/app#pair=<token>`
-(`&relay=` only off the default relay; `VIBEOS_APP` overrides the app url). The
+(`&relay=` only off the default relay — absence MEANS the apigw default, a
+positive statement the tab relies on: a container desktop with its own
+`__vibeosRelayDefault` refuses a link whose relay, explicit or implied, is not
+its own, naming the `--relay` to use; `VIBEOS_APP` overrides the app url). The
 tab side reads the fragment, `history.replaceState` first, shows the root
 sentence before dialing, and stores it as its remembered token; its unsolicited
 tools frame is the "paired" signal. want:tools carries `pairing:true` meanwhile.

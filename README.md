@@ -71,6 +71,12 @@ enough on its own: this package usually pairs *after* the tab, and reconnects
 roughly every 800 s when the serverless function reaches its limit — so it asks
 on every connect and the tab must answer `want`.
 
+A self-hosted desktop (the vibeOS container) runs its own relay: start the
+agent with `--relay wss://<that host>/…` and the pair link carries it as
+`&relay=`. A link with no `&relay=` means the public default; a container
+desktop refuses a link whose relay is not its own, naming the `--relay` to use,
+rather than silently pairing through infrastructure you do not run.
+
 `--relay` (or `VIBEOS_RELAY`) takes a comma-separated list: a relay that cannot
 be reached at all falls through to the next; one that was open and dropped is
 redialed as is. A call whose frame exceeds 128 KB is refused with an error naming
