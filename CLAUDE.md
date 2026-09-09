@@ -65,6 +65,14 @@ api/mcp/relay` recovery command, 0 dials, nothing stored; a `--relay`-matched
 link gets consent, 1 dial, and vm_exec uname -m → i686. Contract: a link with no
 `&relay=` means the public default (a positive statement), so a container tab
 treats it as a mismatch, never as "unknown".
+Re-witnessed on rc7 (8267, dedicated) 2026-09-09: cold `npx` (17s fresh install)
+still pairs — the 5s handshake deadline is clock-at-ws-accept, not spawn, so
+first runs are safe; a hello-less socket closes 1002 at 5210ms; a valid hello
+with no peer survives 130s (bounded-waiter, not deadline); native no-Origin
+accepted, foreign Origin 403. Two container-relay findings (serveRelay, NOT this
+package): the origin check is Origin==Host agreement not an allowlist (rebinding
+`127.attacker.test` opens; `localhost:8267` vs Host `127.0.0.1:8267` 403), and a
+200KB frame is forwarded to the peer uncapped with no sender close.
 `npx vibeos-mcp forget` deletes the file. Leak model: a leaked link pairs the
 OPENER's desktop to the sender's agent — the warning says "you are handing this
 agent your desktop", not "keep this secret".
