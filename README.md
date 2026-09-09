@@ -5,12 +5,24 @@ Code, Cursor, Codex — instead of pasting an API key into the browser. vibeOS
 supplies the tools and the machine; your agent supplies the model.
 
 ```sh
-claude mcp add vibeos -- npx vibeos-mcp --token <token>
+claude mcp add vibeos -- npx vibeos-mcp
 ```
 
-Get the token from **Settings → Capabilities** in the desktop. It is remembered
-in that browser for seven days — reloads and closed tabs keep the pairing —
-and *Forget this agent* ends it at once.
+That is the whole install. The first time your agent needs the desktop it
+answers with a link — `https://vibeos.sh/app#pair=…` — open it, read the
+warning, accept, and the desktop is paired: its tools appear in the agent
+without a restart. The token behind the link is minted on your machine and
+remembered in `~/.vibeos-mcp/token.json` for seven days (the desktop remembers
+it for the same seven — reloads and closed tabs keep the pairing); the token
+rides the link's fragment, which never reaches vibeos.sh. `npx vibeos-mcp forget`
+drops it. Starting from the desktop instead — **Settings › Capabilities › Pair**
+— still works: paste the command it shows, which carries `--token`. *Forget this
+agent* in the desktop ends a pairing at once.
+
+Whoever opens the link hands *their* desktop to *your* agent, root included, so
+the warning is on the page before anything dials. Clients that do not show a
+server's instructions get a single `pair_desktop` tool that returns the link
+until a desktop is paired.
 
 ## Why a relay exists
 
@@ -40,7 +52,7 @@ Between the tab and this package. The relay does not interpret any of it.
 | Direction | Frame | Meaning |
 |---|---|---|
 | both → relay | `{"hello":"tab"\|"agent","token":"<64 hex>"}` | first frame, pairs the socket |
-| agent → tab | `{"want":"tools","agent":"<client name>","sampling":bool}` | sent on every (re)connect, and again after MCP initialize once the client's name and capabilities are known; `sampling` says whether the client's model can power apps |
+| agent → tab | `{"want":"tools","agent":"<client name>","sampling":bool,"pairing":bool}` | sent on every (re)connect, and again after MCP initialize once the client's name and capabilities are known; `sampling` says whether the client's model can power apps; `pairing` that the package minted its token and no desktop has taken the link yet |
 | tab → agent | `{"ask":N,"ai":{"prompt","images?":[{mime,base64}],"json?","system?"}}` | an app's `api.ai` call when the tab has no model of its own; answered via MCP sampling (`sampling/createMessage`) when the client supports it |
 | agent → tab | `{"ask":N,"result":"…"}` or `{"ask":N,"error":"…"}` | the model's text, or why not (client cannot sample, 120 s deadline) — `ask` ids are the tab's, distinct from call `id`s |
 | tab → agent | `{"tools":[{name,description,parameters}],"instructions":"…"}` | `TOOL_SCHEMAS` verbatim, plus the tab's map of the OS (~6 KB): passed to the client as the MCP server's `instructions` in the initialize result |

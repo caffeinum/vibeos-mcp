@@ -36,6 +36,20 @@ surfaced as relay error code 5000 and fails in-flight calls.
 must answer fast (empty if no tab, then `list_changed`): Claude Code times out a
 slow list and shows the server as broken.
 
+**No-token mode (0.2.0)**: `claude mcp add vibeos -- npx vibeos-mcp`. The package
+mints 64 hex locally (`token-store.mjs`, `~/.vibeos-mcp/token.json`, 0600, 7 d;
+`VIBEOS_HOME` overrides for tests; a stale file is re-minted, never dialed), dials
+the relay, and until a desktop pairs the initialize `instructions`, a
+`pair_desktop` tool and every call carry `https://vibeos.sh/app#pair=<token>`
+(`&relay=` only off the default relay; `VIBEOS_APP` overrides the app url). The
+tab side reads the fragment, `history.replaceState` first, shows the root
+sentence before dialing, and stores it as its remembered token; its unsolicited
+tools frame is the "paired" signal. want:tools carries `pairing:true` meanwhile.
+A TTY run with no token prints the link and waits, exits 0 on pairing.
+`npx vibeos-mcp forget` deletes the file. Leak model: a leaked link pairs the
+OPENER's desktop to the sender's agent — the warning says "you are handing this
+agent your desktop", not "keep this secret".
+
 **A token is root on that desktop**: edit_file on the OS source, vm_exec in the
 machine. Remembered in the browser for 7 days (localStorage + expiry): reload_os,
 hand reloads and closed tabs are gaps this package rides (redial, re-ask tools,

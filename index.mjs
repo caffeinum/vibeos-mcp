@@ -258,7 +258,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.2.0" },
+  { name: "vibeos", version: "0.2.1" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
