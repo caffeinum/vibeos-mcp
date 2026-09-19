@@ -10,6 +10,7 @@ import { join } from "node:path";
 
 const TOKEN = "c".repeat(64);
 const BYE_TOKEN = "e".repeat(64);
+const SETTLE_TOKEN = "b".repeat(64);
 const pairs = new Map();
 const dials = new Map();
 
@@ -43,8 +44,17 @@ wss.on("connection", (ws) => {
     }
     const pair = pairs.get(token) ?? {};
     const peer = side === "tab" ? pair.agent : pair.tab;
-    if (peer) peer.send(data);
-    else ws.send(JSON.stringify({ error: "peer not connected", code: 4002 }));
+    if (peer) {
+      if (token === SETTLE_TOKEN && side === "agent") {
+        let forward;
+        try { forward = JSON.parse(data); } catch {}
+        if (forward?.tool === "settle_probe") {
+          ws.send(JSON.stringify({ error: "peer not connected", code: 4002, scope: "settle", id: forward.id }));
+          return;
+        }
+      }
+      peer.send(data);
+    } else ws.send(JSON.stringify({ error: "peer not connected", code: 4002 }));
   });
   // The real route detaches on close. Without this the relay forwards into a
   // dead socket and the agent waits forever — which is what my first run
@@ -168,6 +178,36 @@ check("a tab that never answers fails the call at the deadline, as a tool error"
   Date.now() - tf < 4000 && frozen.result?.isError && /did not answer freeze within 2 s/.test(frozen.result?.content?.[0]?.text ?? ""), `${Date.now() - tf}ms ${JSON.stringify(frozen).slice(0, 160)}`);
 const stillAlive = await rpc(34, "tools/call", { name: "list_apps", arguments: {} });
 check("and the next call on the same socket still works", stillAlive.result?.content?.[0]?.text === "notes.js, paint.js", JSON.stringify(stillAlive).slice(0, 120));
+
+// scoped 4002 (sticky reattach settle): only the named call fails
+const tabSettle = new WebSocket(url);
+await new Promise((r) => tabSettle.on("open", r));
+tabSettle.send(JSON.stringify({ hello: "tab", token: SETTLE_TOKEN }));
+tabSettle.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
+tabSettle.on("message", (raw) => {
+  const msg = JSON.parse(raw.toString("utf8"));
+  if (msg.want === "tools") tabSettle.send(JSON.stringify({ tools: TOOLS, instructions: INSTRUCTIONS }));
+  if (msg.id == null) return;
+  if (msg.tool === "settle_probe") return;
+  tabSettle.send(JSON.stringify({ id: msg.id, result: "notes.js, paint.js" }));
+});
+const childSettle = spawn("node", ["index.mjs", "--token", SETTLE_TOKEN, "--relay", url], {
+  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "inherit"],
+});
+const wSettle = wire(childSettle);
+await wSettle.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+childSettle.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+await new Promise((r) => setTimeout(r, 300));
+const [scopedFail, scopedOk] = await Promise.all([
+  wSettle.rpc(2, "tools/call", { name: "settle_probe", arguments: {} }),
+  wSettle.rpc(3, "tools/call", { name: "list_apps", arguments: {} }),
+]);
+check("scoped 4002 fails only the call the relay named",
+  scopedFail.result?.isError && /peer not connected/.test(scopedFail.result?.content?.[0]?.text ?? ""),
+  JSON.stringify(scopedFail).slice(0, 160));
+check("a parallel call survives a scoped 4002 on its sibling",
+  scopedOk.result?.content?.[0]?.text === "notes.js, paint.js", JSON.stringify(scopedOk).slice(0, 120));
+childSettle.kill(); tabSettle.close();
 
 // the failure that matters: tab gone must error, not hang
 tab.close();

@@ -112,6 +112,9 @@ const settled = (ms) => {
   });
 };
 const settle = () => { for (const w of settleWaiters.splice(0)) w(); };
+/** Relay marks a brief peer gap (sticky reattach / settle), not a hard gone. */
+const scopedPeerGap = (msg) =>
+  msg?.code === 4002 && (msg.scope === "settle" || msg.scope === "reattach" || msg.scope === "call");
 let helloSeen = false;
 // The MCP client's name, once initialize has run: the tab's pane says
 // "claude-code is connected" rather than "an agent".
@@ -175,7 +178,7 @@ function failAll(reason) {
 const socket = new RelaySocket(relayUrls, {
   onWarn: (text) => process.stderr.write(`vibeos-mcp: ${text}\n`),
   hello: { hello: "agent", token },
-  onGap: (open) => {
+  onGap: (open, detail) => {
     if (open) {
       // Ask for the tool list on every (re)connect. The tab sends its schemas
       // unsolicited when IT connects, which is useless to us if we paired
@@ -185,6 +188,12 @@ const socket = new RelaySocket(relayUrls, {
       return;
     }
     if (!open) {
+      // A scoped 4002 bye (sticky token reattach on the durable relay): the
+      // socket redials in place; do not fail every pending call like a hard gap.
+      if (detail?.settle) {
+        paired = false;
+        return;
+      }
       // The relay closes every ~800 s by design. In-flight calls cannot survive
       // it: the tab may have run the tool, but the answer is gone.
       failAll("vibeos relay disconnected mid-call (the desktop may still have run it)");
@@ -244,9 +253,22 @@ const socket = new RelaySocket(relayUrls, {
       return;
     }
     if (msg?.error && msg?.code) {
+      const why = `vibeos relay: ${msg.error}`;
+      if (scopedPeerGap(msg)) {
+        // The tab side reads unscoped 4002 as 'waiting'; scoped frames are the
+        // settle window while it re-helloes the same token — fail only the call
+        // they name, not the whole session (tool schemas stay; retry after pair).
+        paired = false;
+        if (msg.id != null && pending.has(msg.id)) {
+          const slot = pending.get(msg.id);
+          pending.delete(msg.id);
+          slot.reject(new Error(why));
+        }
+        return;
+      }
       if (msg.code === 4002) paired = false;
       if (msg.code === 5000) process.stderr.write(`vibeos-mcp: ${msg.error} — in-flight calls failed\n`);
-      failAll(`vibeos relay: ${msg.error}`);
+      failAll(why);
       return;
     }
     if (msg?.id != null && pending.has(msg.id)) {
@@ -258,7 +280,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.2.2" },
+  { name: "vibeos", version: "0.2.3" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
