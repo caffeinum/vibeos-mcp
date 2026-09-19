@@ -31,7 +31,7 @@ export class RelaySocket {
    * @param {string | string[]} url the relay, or relays in order of preference:
    *   a dial that fails before it opens moves to the next; an open socket that
    *   later drops redials the same relay first.
-   * @param {{ onFrame: (data: string) => void, onGap: (open: boolean) => void, onEnd: (reason: string) => void, onHello?: (reply: { paired: boolean, instance?: string }) => void, onWarn?: (text: string) => void, hello: object }} handlers
+   * @param {{ onFrame: (data: string) => void, onGap: (open: boolean, detail?: { settle?: boolean }) => void, onEnd: (reason: string) => void, onHello?: (reply: { paired: boolean, instance?: string }) => void, onWarn?: (text: string) => void, hello: object }} handlers
    */
   constructor(url, { onFrame, onGap, onEnd, onHello, onWarn, hello }) {
     this.urls = Array.isArray(url) ? url : [url];
@@ -145,6 +145,16 @@ export class RelaySocket {
         if (typeof msg.message === "string" && msg.connectionId && !msg.tools && msg.id == null) {
           this.onWarn?.(`relay error: ${msg.message} (requestId ${msg.requestId ?? "?"})`);
           this.onFrame(JSON.stringify({ error: `relay error: ${msg.message}`, code: 5000 }));
+          return;
+        }
+        if (msg.bye === 4002 && (msg.scope === "settle" || msg.scope === "reattach")) {
+          this.inner = null;
+          try { inner.close(); } catch { /* already gone */ }
+          this.open = false;
+          this.stopHeartbeat();
+          this.onGap(false, { settle: true });
+          const delay = DELAYS[Math.min(this.attempt++, DELAYS.length - 1)];
+          setTimeout(() => this.dial(), delay);
           return;
         }
         if (msg.bye === 4001 || msg.bye === 4003) {

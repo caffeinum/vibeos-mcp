@@ -70,7 +70,8 @@ Between the tab and this package. The relay does not interpret any of it.
 | agent → relay | `{"ping":N}` | every 30 s; a relay that names its instance must answer within 10 s or this side redials |
 | relay → agent | `{"pong":N,"instance":"<id>"}` | the relay's answer, never forwarded to the tab |
 | relay → either | `{"bye":4001\|4003,"reason":"…"}` | sent just before a normal close by a relay that cannot send custom close codes (API Gateway); means exactly what the close code would |
-| relay → either | `{"error":"peer not connected","code":4002}` | the other end is gone |
+| relay → either | `{"error":"peer not connected","code":4002}` | the other end is gone (unscoped: every in-flight call fails) |
+| relay → either | `{"error":"peer not connected","code":4002,"scope":"settle"\|"reattach"\|"call","id"?}` | a brief peer gap while the tab re-helloes the same token; only the named `id` fails, the pairing and tool list stay |
 | tab → relay | `{"revoke":true}` | byte-exact; the relay closes both ends 4003 and forgets the token |
 | tab → relay | `{"ping":<ms>}` | every 30 s, answered by the relay the same way |
 
