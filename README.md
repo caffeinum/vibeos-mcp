@@ -66,6 +66,8 @@ Between the tab and this package. The relay does not interpret any of it.
 | tab → agent | `{"tools":[{name,description,parameters}],"instructions":"…"}` | `TOOL_SCHEMAS` verbatim, plus the tab's map of the OS (~6 KB): passed to the client as the MCP server's `instructions` in the initialize result |
 | agent → tab | `{"id":N,"tool":"name","input":{...}}` | a call |
 | tab → agent | `{"id":N,"result":...}` or `{"id":N,"error":"..."}` | its answer; any `{mime,base64}` or `{mimeType,data}` object in a result, at any depth, reaches the MCP client as image content and `{mime:"text/plain",text}` as a text block, each replaced in the JSON by a marker; never a data: url in text |
+
+`read_desktop`'s no-arg overview returns an `errors` array (newest 10, `{time, message, source, shown}`, redacted) — the agent-readable twin of the red "vibeOS hit an error" bar. It rides inside `result`, so the frame contract is unchanged and the package forwards it verbatim (the call result is JSON-stringified whole); nothing in this package needed changing to carry it.
 | relay → either | `{"paired":true\|false,"instance":"<id>"}` | the relay's answer to the hello: is the other side already there, and which relay function instance this is (tab and agent must land on the same one) |
 | agent → relay | `{"ping":N}` | every 30 s; a relay that names its instance must answer within 10 s or this side redials |
 | relay → agent | `{"pong":N,"instance":"<id>"}` | the relay's answer, never forwarded to the tab |
