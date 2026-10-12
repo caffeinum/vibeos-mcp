@@ -96,6 +96,30 @@ let relayInstance = undefined;
 const noTab = () => tokenIsOurs
   ? pairLine()
   : `no vibeOS tab is paired with this token${relayInstance ? ` (relay instance ${relayInstance} — the Capabilities pane must show the same one)` : ""} — open vibeos.sh/app › Settings › Capabilities`;
+// The relay reports a tab row (paired) but no tools frame has arrived: the tab
+// is open but its JS is paused — a browser tab left in the background can stop
+// answering. "Open the link" (noTab) is wrong here; the tab is already there,
+// the person just needs to return to it. See beads-7kj6.
+const pairedNoTools = () =>
+  "a vibeOS desktop is paired but hasn't sent its tools yet — a browser tab left in the background can pause. Switch to your vibeOS tab to finish pairing.";
+const tabHint = () => (paired && !toolSchemas.length ? pairedNoTools() : noTab());
+// Say it once on stderr too, ~15 s after we are paired-but-no-tools, so a
+// person running `npx vibeos-mcp` in a terminal sees it without a tool call.
+const NUDGE_MS = Number(process.env.VIBEOS_NUDGE_MS) || 15000;
+let nudgeTimer = null;
+let nudged = false;
+const armNudge = () => {
+  if (nudged || nudgeTimer || toolSchemas.length) return;
+  nudgeTimer = setTimeout(() => {
+    nudgeTimer = null;
+    if (!toolSchemas.length && paired) {
+      nudged = true;
+      process.stderr.write(`vibeos-mcp: ${pairedNoTools()}\n`);
+    }
+  }, NUDGE_MS);
+  nudgeTimer.unref?.();
+};
+const clearNudge = () => { if (nudgeTimer) { clearTimeout(nudgeTimer); nudgeTimer = null; } };
 /**
  * Resolves once the relay has answered the hello (so `paired` means
  * something) or the tab's schemas have arrived, or after `ms`. A client like
@@ -207,6 +231,7 @@ const socket = new RelaySocket(relayUrls, {
     process.stderr.write(
       `vibeos-mcp: relay connected, tab paired: ${isPaired ? "yes" : "no"}, relay instance ${instance ?? "(unreported)"}\n`
     );
+    if (isPaired && !toolSchemas.length) armNudge();
   },
   onEnd: (reason) => {
     ended = reason;
@@ -231,6 +256,8 @@ const socket = new RelaySocket(relayUrls, {
       }
       const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
+      clearNudge();
+      nudged = false;
       if (process.stdin.isTTY && tokenIsOurs) {
         process.stderr.write("vibeos-mcp: paired ✓ — the token is remembered; `claude mcp add vibeos -- npx vibeos-mcp` uses it.\n");
         socket.close();
@@ -280,7 +307,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.2.3" },
+  { name: "vibeos", version: "0.2.4" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -328,7 +355,7 @@ server.setRequestHandler(ListToolsRequestSchema, async () => {
     sawSchemas = null;
   }
   if (!toolSchemas.length) {
-    process.stderr.write(`vibeos-mcp: tools/list with no tab schemas yet — ${noTab()}\n`);
+    process.stderr.write(`vibeos-mcp: tools/list with no tab schemas yet — ${tabHint()}\n`);
     // Not every client shows the server's instructions (mcpt does not), so
     // the link is also a tool until a desktop pairs; then the real list
     // replaces it via list_changed.
@@ -372,11 +399,14 @@ function liftMedia(value, blocks) {
 server.setRequestHandler(CallToolRequestSchema, async (request) => {
   if (ended) return { content: [{ type: "text", text: `vibeos: ${ended}` }], isError: true };
   if (request.params.name === PAIR_TOOL.name && tokenIsOurs) {
-    return { content: [{ type: "text", text: toolSchemas.length ? "a desktop is already paired; its tools are listed now" : pairLine() }] };
+    return { content: [{ type: "text", text: toolSchemas.length ? "a desktop is already paired; its tools are listed now" : tabHint() }] };
   }
   await settled(3000);
-  if (!paired && !toolSchemas.length) {
-    return { content: [{ type: "text", text: noTab() }], isError: true };
+  if (!toolSchemas.length) {
+    // No tools yet: either no tab (noTab) or a paired tab that hasn't answered
+    // — in the latter case say "switch to your vibeOS tab" instead of hanging
+    // to the call budget (beads-7kj6).
+    return { content: [{ type: "text", text: tabHint() }], isError: true };
   }
   const id = nextId++;
   // A tab whose main thread is busy (a catastrophic regex in search_file

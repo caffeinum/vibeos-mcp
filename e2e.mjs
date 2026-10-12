@@ -328,6 +328,31 @@ child5.kill();
 const forgot = spawnSync("node", ["index.mjs", "forget"], { cwd: import.meta.dirname, env: { ...process.env, VIBEOS_HOME: home }, encoding: "utf8" });
 check("`forget` deletes the remembered token", forgot.status === 0 && /forgot/.test(forgot.stderr) && !existsSync(join(home, "token.json")), forgot.stderr);
 
+// --- paired, but the tab never sends its tools (a backgrounded/asleep tab):
+// the package says "switch to your vibeOS tab", on stderr and as the tool
+// error, not the "open the link" line and not a silent hang (beads-7kj6).
+const FROZEN_TOKEN = "f".repeat(64);
+const tabFrozen = new WebSocket(url);
+await new Promise((r) => tabFrozen.on("open", r));
+tabFrozen.send(JSON.stringify({ hello: "tab", token: FROZEN_TOKEN }));
+// Attaches (so the relay reports the agent paired) but NEVER answers want:tools.
+await new Promise((r) => setTimeout(r, 100));
+const childF = spawn("node", ["index.mjs", "--token", FROZEN_TOKEN, "--relay", url], {
+  cwd: import.meta.dirname, stdio: ["pipe", "pipe", "pipe"], env: { ...process.env, VIBEOS_NUDGE_MS: "300", VIBEOS_CALL_TIMEOUT_MS: "1500" },
+});
+let errF = ""; childF.stderr.on("data", (d) => { errF += d; });
+const wF = wire(childF);
+await wF.rpc(1, "initialize", { protocolVersion: "2024-11-05", capabilities: {}, clientInfo: { name: "e2e", version: "0" } });
+childF.stdin.write(JSON.stringify({ jsonrpc: "2.0", method: "notifications/initialized" }) + "\n");
+const frozenCall = await wF.rpc(2, "tools/call", { name: "vm_exec", arguments: { command: "echo hi" } });
+check("paired-but-no-tools: the tool error says switch to your vibeOS tab",
+  /Switch to your vibeOS tab/.test(frozenCall.result?.content?.[0]?.text ?? "") && frozenCall.result?.isError === true,
+  JSON.stringify(frozenCall.result).slice(0, 200));
+await new Promise((r) => setTimeout(r, 500)); // let the ~300ms nudge timer fire
+check("paired-but-no-tools: stderr nudges to switch tabs (300ms here, ~15s in prod)",
+  /Switch to your vibeOS tab/.test(errF), errF.slice(-300));
+childF.kill(); tabFrozen.close();
+
 // --- the tarball carries every local module index.mjs imports (0.2.0 shipped
 // without token-store.mjs and crashed at start for every npx user)
 const pack = spawnSync("npm", ["pack", "--dry-run", "--json"], { cwd: import.meta.dirname, encoding: "utf8" });
