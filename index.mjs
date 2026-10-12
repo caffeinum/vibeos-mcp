@@ -101,7 +101,7 @@ const noTab = () => tokenIsOurs
 // answering. "Open the link" (noTab) is wrong here; the tab is already there,
 // the person just needs to return to it. See beads-7kj6.
 const pairedNoTools = () =>
-  "a vibeOS desktop is paired but hasn't sent its tools yet — a browser tab left in the background can pause. Switch to your vibeOS tab to finish pairing.";
+  "Switch to your vibeOS tab to finish pairing — a browser tab in the background may not answer until you look at it.";
 const tabHint = () => (paired && !toolSchemas.length ? pairedNoTools() : noTab());
 // Say it once on stderr too, ~15 s after we are paired-but-no-tools, so a
 // person running `npx vibeos-mcp` in a terminal sees it without a tool call.
@@ -149,6 +149,24 @@ let ended = null;
 // apps (api.ai) when the tab has no model of its own. Known after initialize.
 const canSample = () => !!server.getClientCapabilities?.()?.sampling;
 const askForTools = () => socket.send(JSON.stringify({ want: "tools", agent: agentName, sampling: canSample(), pairing: tokenIsOurs && !paired && !toolSchemas.length }));
+// One lost want:tools (a relay gap drops the frame) shouldn't hang pairing until
+// the next reconnect (~13 min). After a connect, re-ask a few times until the
+// tab's schemas arrive, then stop (beads-7kj6).
+const WANT_RESEND_MS = Number(process.env.VIBEOS_WANT_RESEND_MS) || 3000;
+const WANT_RESEND_MAX = 10;
+let wantTimer = null;
+let wantResends = 0;
+const startWantResend = () => {
+  if (wantTimer || toolSchemas.length) return;
+  wantResends = 0;
+  wantTimer = setInterval(() => {
+    if (toolSchemas.length || ended || wantResends >= WANT_RESEND_MAX) { clearInterval(wantTimer); wantTimer = null; return; }
+    wantResends++;
+    askForTools();
+  }, WANT_RESEND_MS);
+  wantTimer.unref?.();
+};
+const stopWantResend = () => { if (wantTimer) { clearInterval(wantTimer); wantTimer = null; } };
 
 /** How long an app's api.ai ask may wait on the client's model (a human may approve each). */
 const ASK_TIMEOUT_MS = Number(process.env.VIBEOS_ASK_TIMEOUT_MS) || 120_000;
@@ -209,6 +227,7 @@ const socket = new RelaySocket(relayUrls, {
       // afterwards — or reconnected after an 800 s cut, which happens roughly
       // every 13 minutes and would otherwise leave tools/list empty forever.
       askForTools();
+      startWantResend();
       return;
     }
     if (!open) {
@@ -236,6 +255,8 @@ const socket = new RelaySocket(relayUrls, {
   onEnd: (reason) => {
     ended = reason;
     toolSchemas = [];
+    stopWantResend();
+    clearNudge();
     failAll(`vibeos: ${reason}`);
   },
   onFrame: (raw) => {
@@ -257,6 +278,7 @@ const socket = new RelaySocket(relayUrls, {
       const changed = JSON.stringify(msg.tools) !== JSON.stringify(toolSchemas);
       toolSchemas = msg.tools;
       clearNudge();
+      stopWantResend();
       nudged = false;
       if (process.stdin.isTTY && tokenIsOurs) {
         process.stderr.write("vibeos-mcp: paired ✓ — the token is remembered; `claude mcp add vibeos -- npx vibeos-mcp` uses it.\n");
