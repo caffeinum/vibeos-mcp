@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- beads-tavc.17 daily prod pairing canary. Install:
+       cp canary/sh.vibeos.mcp.canary.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/sh.vibeos.mcp.canary.plist
+     Runs once a day at 11:37 local. -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>sh.vibeos.mcp.canary</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/aleks/Github/caffeinum/vibeos-mcp/canary/run-canary.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key><integer>11</integer>
+    <key>Minute</key><integer>37</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/aleks/.vibeos-mcp/canary.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/aleks/.vibeos-mcp/canary.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/aleks</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/Users/aleks/.local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
