@@ -13,6 +13,12 @@ OUT=$(/opt/homebrew/bin/node canary/baseline-query.mjs 2>&1); CODE=$?
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
 printf '[%s] exit=%s\n%s\n' "$TS" "$CODE" "$OUT" >> "$LOG"
 
+# ceo (beads-tavc): close beads-1vu7 once the pre-HN baseline has landed.
+if [ "$CODE" -eq 0 ]; then
+  BEADS_DIR=/Users/aleks/.beads /opt/homebrew/bin/bd close beads-1vu7 \
+    --reason "HN agent-only/paired metric shipped (PR #118, merged 7fbe49b) + pre-HN baseline DM'd to yc" >> "$LOG" 2>&1
+fi
+
 # self-destruct: run once, then remove the launchd agent so it never recurs
 PLIST="$HOME/Library/LaunchAgents/sh.vibeos.mcp.baseline.plist"
 launchctl unload "$PLIST" >> "$LOG" 2>&1
