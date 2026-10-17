@@ -37,7 +37,7 @@ async function pairProbe() {
     tab = new WebSocket(RELAY);
     const tabReady = new Promise((res, rej) => { tab.on("open", res); tab.on("error", rej); });
     await Promise.race([tabReady, sleep(15000).then(() => { throw new Error("tab ws never opened (relay unreachable?)"); })]);
-    tab.send(JSON.stringify({ hello: "tab", token }));
+    tab.send(JSON.stringify({ hello: "tab", token, test: 1 })); // marks this pair as our own, so the HN agent-only/paired read drops it (beads-1vu7)
     tab.send(JSON.stringify({ tools: [TOOL], instructions: "canary" })); // unsolicited, per the contract
     tab.on("message", (raw) => {
       let m; try { m = JSON.parse(raw.toString()); } catch { return; }
