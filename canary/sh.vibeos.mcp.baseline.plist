@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- beads-1vu7 one-shot pre-HN baseline. Fires once on 2026-10-18 22:00 local
+     (Sunday night before the Mon 10-19 HN launch), DMs vibeos-yc the agent-only
+     vs paired counts for 10-17 and 10-18, then unloads + removes itself.
+     Install:
+       cp canary/sh.vibeos.mcp.baseline.plist ~/Library/LaunchAgents/
+       launchctl load ~/Library/LaunchAgents/sh.vibeos.mcp.baseline.plist -->
+<plist version="1.0">
+<dict>
+  <key>Label</key><string>sh.vibeos.mcp.baseline</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/aleks/Github/caffeinum/vibeos-mcp/canary/run-baseline.sh</string>
+  </array>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Month</key><integer>10</integer>
+    <key>Day</key><integer>18</integer>
+    <key>Hour</key><integer>22</integer>
+    <key>Minute</key><integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key><string>/Users/aleks/.vibeos-mcp/baseline.out.log</string>
+  <key>StandardErrorPath</key><string>/Users/aleks/.vibeos-mcp/baseline.err.log</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>HOME</key><string>/Users/aleks</string>
+    <key>PATH</key><string>/opt/homebrew/bin:/Users/aleks/.local/bin:/usr/bin:/bin</string>
+  </dict>
+</dict>
+</plist>
