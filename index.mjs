@@ -329,7 +329,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.2.4" },
+  { name: "vibeos", version: "0.2.5" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
