@@ -8,10 +8,12 @@ supplies the tools and the machine; your agent supplies the model.
 claude mcp add vibeos -- npx vibeos-mcp
 ```
 
-That is the whole install. The first time your agent needs the desktop it
-answers with a link — `https://vibeos.sh/app#pair=…` — open it, read the
-warning, accept, and the desktop is paired: its tools appear in the agent
-without a restart. The token behind the link is minted on your machine and
+That is the whole install. Then ask your agent to **pair vibeos** — it answers
+with a link — `https://vibeos.sh/app#pair=…` — open it, read the warning, accept,
+and the desktop is paired: its tools appear in the agent without a restart. The
+link reaches the *agent*, not your terminal, so it surfaces only when you ask for
+it; `pair vibeos` is the shortest phrase that gets it, and works on a freshly
+started client before anything is paired. The token behind the link is minted on your machine and
 remembered in `~/.vibeos-mcp/token.json` for seven days (the desktop remembers
 it for the same seven — reloads and closed tabs keep the pairing); the token
 rides the link's *fragment*, so it stays out of the HTTP request — access logs,
