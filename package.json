@@ -1,7 +1,8 @@
 {
   "name": "vibeos-mcp",
-  "version": "0.2.5",
-  "description": "Drive a vibeOS desktop from your own MCP client (Claude Code, Cursor, Codex).",
+  "version": "0.2.6",
+  "mcpName": "io.github.caffeinum/vibeos-mcp",
+  "description": "A throwaway Linux box your coding agent can wreck, driven from your own MCP client.",
   "type": "module",
   "bin": {
     "vibeos-mcp": "index.mjs"
@@ -21,7 +22,7 @@
     "type": "git",
     "url": "git+https://github.com/caffeinum/vibeos-mcp.git"
   },
-  "homepage": "https://vibeos.sh",
+  "homepage": "https://vibeos.sh/agent?ref=npm",
   "engines": {
     "node": ">=20"
   },
@@ -30,8 +31,13 @@
   },
   "keywords": [
     "mcp",
-    "vibeos",
+    "mcp-server",
+    "model-context-protocol",
     "claude-code",
-    "cursor"
+    "cursor",
+    "vibeos",
+    "sandbox",
+    "linux",
+    "vm"
   ]
 }

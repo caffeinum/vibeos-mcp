@@ -1,8 +1,10 @@
 # vibeos-mcp
 
-Drive a [vibeOS](https://vibeos.sh/app) desktop from your own MCP client — Claude
-Code, Cursor, Codex — instead of pasting an API key into the browser. vibeOS
-supplies the tools and the machine; your agent supplies the model.
+**A throwaway Linux box your coding agent can wreck.** `vibeos-mcp` wires your own
+MCP client — Claude Code, Cursor, Codex — to a [vibeOS](https://vibeos.sh/agent?ref=readme)
+desktop: a real machine your agent can edit, run commands on, and break, with
+nothing of yours on it. You bring the agent; vibeOS brings the tools and the box —
+no API key pasted into a browser.
 
 ```sh
 claude mcp add vibeos -- npx vibeos-mcp
