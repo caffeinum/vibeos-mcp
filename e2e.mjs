@@ -301,7 +301,7 @@ const minted = (init4.result?.instructions ?? "").match(/https:\/\/vibeos\.test\
 const stored = JSON.parse(readFileSync(join(home, "token.json"), "utf8"));
 check("with no token, initialize's instructions carry the pair link with a freshly minted token", !!minted && minted === stored.token && stored.expires > Date.now(), (init4.result?.instructions ?? "").slice(0, 160));
 check("a stale token.json was replaced, not dialed", minted !== "f".repeat(64), minted);
-check("the link says the agent is root on that desktop", /root on that desktop/.test(init4.result?.instructions ?? ""), "");
+check("the link warns the agent is admin of that machine for 7 days", /admin of that machine for 7 days/.test(init4.result?.instructions ?? ""), (init4.result?.instructions ?? "").slice(0, 200));
 check("the link carries no relay when on the default one... or the given one when not", /&relay=ws%3A%2F%2F127\.0\.0\.1/.test(init4.result?.instructions ?? ""), (init4.result?.instructions ?? "").slice(0, 200));
 const list4 = await w4.rpc(2, "tools/list", {});
 check("tools/list before pairing offers pair_desktop and nothing else", (list4.result?.tools ?? []).map((t) => t.name).join(",") === "pair_desktop", JSON.stringify(list4.result).slice(0, 120));

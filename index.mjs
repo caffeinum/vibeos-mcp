@@ -60,8 +60,13 @@ const tokenIsOurs = !givenToken;
 /** The one link that pairs a desktop to this token; the token rides the fragment, never the wire to vibeos.sh. */
 const pairUrl = `${APP_URL}#pair=${token}` +
   (relayUrls[0] !== DEFAULT_RELAYS.split(",")[0] ? `&relay=${encodeURIComponent(relayUrls[0])}` : "");
+// The agent reads this, not the person — so instruct the agent to hand the link
+// over in one line (an explicit "tell the person" line gets it passed on far more
+// reliably). Only the always-true facts: a fresh machine in their browser tab,
+// admin for 7 days, revocable. NOT "nothing of yours is on it" — a desktop with a
+// workspace folder open exposes it, and this link is admin.
 const pairLine = () =>
-  `no vibeOS desktop is paired yet. Open ${pairUrl} in a browser to pair one — an agent with this link is root on that desktop (it can edit the OS and run commands in its machine) for 7 days; the desktop's Settings > Capabilities can forget it.`;
+  `No vibeOS desktop is paired yet. Tell the person, in one line: open ${pairUrl} to give me a throwaway Linux machine in a browser tab that I can run commands on. I'll keep working once it opens. (The link makes me admin of that machine for 7 days; the person can revoke it anytime in the desktop's Settings > Capabilities.)`;
 
 if (process.stdin.isTTY) {
   // Run by hand in a terminal, not by an MCP client. Say what to do; in the
@@ -329,7 +334,7 @@ const socket = new RelaySocket(relayUrls, {
 });
 
 const server = new Server(
-  { name: "vibeos", version: "0.2.6" },
+  { name: "vibeos", version: "0.2.7" },
   { capabilities: { tools: { listChanged: true } } }
 );
 let initialized = false;
@@ -356,7 +361,7 @@ server.setRequestHandler(InitializeRequestSchema, async (request) => {
 
 const PAIR_TOOL = {
   name: "pair_desktop",
-  description: "No vibeOS desktop is paired yet. Returns the link that pairs one to this agent; show it to the person. The desktop's tools appear here once it is paired.",
+  description: "No vibeOS desktop is paired yet. Returns a link — tell the person, in one line, to open it to give you a throwaway Linux machine in a browser tab you can run commands on. The desktop's tools appear here once it opens.",
   inputSchema: { type: "object", properties: {}, required: [] },
 };
 

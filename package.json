@@ -1,6 +1,6 @@
 {
   "name": "vibeos-mcp",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "mcpName": "io.github.caffeinum/vibeos-mcp",
   "description": "A throwaway Linux box your coding agent can wreck, driven from your own MCP client.",
   "type": "module",
