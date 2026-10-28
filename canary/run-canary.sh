@@ -13,16 +13,19 @@ cd "$REPO" || exit 2
 
 OUT=$(/opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
 
-# A resolver/connect hiccup (ENOTFOUND, EAI_AGAIN, refused/timed-out dial, a relay
-# that never opened) is not the relay being down — the 2026-10-22 page was exactly
-# that, a local DNS blip (tavc.17). Retry the whole probe once after a short wait
-# before alerting. A real pairing regression ("no tab schemas", "did not
-# round-trip") or an elevated error rate is NOT connect-class, so it still pages
-# on the first failure.
-if [ "$CODE" -ne 0 ] && printf '%s' "$OUT" | grep -Eq 'ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EHOSTUNREACH|ENETUNREACH|getaddrinfo|relay unreachable|ws never opened|socket hang up'; then
+# Both pages so far were transient one-offs that cleared on a manual rerun minutes
+# later with the relay Lambda clean (0 errors/throttles, concurrency ~2): 2026-10-22
+# was a local DNS blip (connect-class), 2026-10-28 was "no tab schemas within 45s"
+# (pairing-class) with Errors=0/Throttles=0 at the minute it fired (tavc.17). So
+# retry the WHOLE pair probe once after a short wait before alerting, whatever the
+# probe-failure reason (connect OR pairing OR a one-shot non-round-trip). A real
+# break is sustained — it fails the retry too and still pages, ~30s later. The
+# elevated-error-rate check reads a 3h window and is already a sustained signal, so
+# it is NOT retried: a run that trips it pages on the first failure.
+if [ "$CODE" -ne 0 ] && printf '%s' "$OUT" | grep -q 'pair probe:' && ! printf '%s' "$OUT" | grep -q 'error rate elevated'; then
   sleep "${CANARY_RETRY_DELAY:-30}"
   RETRY=$(/opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
-  OUT=$(printf '%s\n--- transient connect failure; retried after %ss ---\n%s' "$OUT" "${CANARY_RETRY_DELAY:-30}" "$RETRY")
+  OUT=$(printf '%s\n--- transient pair-probe failure; retried after %ss ---\n%s' "$OUT" "${CANARY_RETRY_DELAY:-30}" "$RETRY")
 fi
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
