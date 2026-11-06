@@ -4,12 +4,35 @@
 # sh.vibeos.mcp.canary. Env knobs: CANARY_DRILL=1 labels the alert as a test;
 # CANARY_RELAY overrides the relay (point at a dead url to prove the alert);
 # CANARY_RETRY_DELAY overrides the transient-failure retry wait (default 30s).
+# The scheduled run first fast-forwards main to origin/main when safe (self-update
+# below); a drill (CANARY_DRILL=1) or a CANARY_RELAY override skips that and never
+# touches git.
 set -uo pipefail
 export PATH="/opt/homebrew/bin:$HOME/.local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 LOG="$HOME/.vibeos-mcp/canary.log"
 mkdir -p "$(dirname "$LOG")"
 cd "$REPO" || exit 2
+
+# Self-update (once per run): the launchd job runs this script straight from the dev
+# checkout, so a merged canary fix would otherwise sit unused until a manual pull
+# (beads-tavc.17). Fast-forward main to origin/main when it is SAFE — only on a clean
+# main (never switching branches or touching uncommitted/untracked work) and only a
+# fast-forward (never a merge/reset that could clobber). Non-fatal: if the fetch fails
+# (e.g. no ssh-agent under launchd) the present version runs anyway. Then re-exec once
+# (guarded by CANARY_SELF_UPDATED) so bash can't execute a half-rewritten script.
+if [ -z "${CANARY_SELF_UPDATED:-}" ] && [ -z "${CANARY_RELAY:-}" ] && [ "${CANARY_DRILL:-}" != "1" ]; then
+  export CANARY_SELF_UPDATED=1
+  if BR=$(git symbolic-ref --short -q HEAD) && [ "$BR" = "main" ] \
+     && git diff --quiet && git diff --cached --quiet; then
+    # fail fast, never prompt/hang: BatchMode + ConnectTimeout bound the ssh dial,
+    # GIT_TERMINAL_PROMPT=0 blocks credential prompts. A hang here would stall the
+    # whole canary (the operator's paw-cron caps a run at 600s).
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10' \
+      git fetch -q origin main 2>/dev/null && git merge --ff-only -q origin/main 2>/dev/null || true
+  fi
+  exec /bin/bash "$0" "$@"
+fi
 
 OUT=$(/opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
 
