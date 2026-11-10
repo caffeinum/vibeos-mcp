@@ -14,6 +14,12 @@ LOG="$HOME/.vibeos-mcp/canary.log"
 mkdir -p "$(dirname "$LOG")"
 cd "$REPO" || exit 2
 
+# Who invoked us (launchd vs the operator's paw-cron vs a manual run) and when, so the
+# log says which scheduler won the lock and how long the run took. $PPID survives the
+# self-update exec (same pid/parent), so a re-exec recomputes the same invoker.
+START=$(date +%s)
+INVOKER=$(ps -o comm= -p "$PPID" 2>/dev/null | sed 's#^.*/##' | tr -d ' '); : "${INVOKER:=?}"
+
 # Single-instance guard: two schedulers fire this canary at the same minute (the
 # launchd agent at 11:37 local AND the operator's paw-cron "37 11 * * *"). Concurrent
 # runs race on the npm/npx cache and the git index lock and can hang past the cron's
@@ -26,8 +32,10 @@ LOCK="$HOME/.vibeos-mcp/canary.lock"
 if [ -z "${CANARY_SELF_UPDATED:-}" ]; then
   if ! mkdir "$LOCK" 2>/dev/null; then
     if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +15 2>/dev/null)" ]; then
-      rmdir "$LOCK" 2>/dev/null; mkdir "$LOCK" 2>/dev/null || exit 0
+      rmdir "$LOCK" 2>/dev/null
+      mkdir "$LOCK" 2>/dev/null || { printf '[%s] skipped: lock contended (via %s)\n' "$(date -u +%FT%TZ)" "$INVOKER" >> "$LOG"; exit 0; }
     else
+      printf '[%s] skipped: lock held, another run won (via %s)\n' "$(date -u +%FT%TZ)" "$INVOKER" >> "$LOG"
       exit 0  # another run is in progress
     fi
   fi
@@ -76,7 +84,7 @@ if [ "$CODE" -ne 0 ] && printf '%s' "$OUT" | grep -q 'pair probe:' && ! printf '
 fi
 
 TS=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-printf '[%s] exit=%s\n%s\n' "$TS" "$CODE" "$OUT" >> "$LOG"
+printf '[%s] exit=%s via=%s dur=%ss\n%s\n' "$TS" "$CODE" "$INVOKER" "$(( $(date +%s) - START ))" "$OUT" >> "$LOG"
 
 if [ "$CODE" -ne 0 ]; then
   REASON=$(printf '%s' "$OUT" | grep -o 'CANARY FAIL:.*' | head -1)
