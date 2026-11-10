@@ -14,6 +14,26 @@ LOG="$HOME/.vibeos-mcp/canary.log"
 mkdir -p "$(dirname "$LOG")"
 cd "$REPO" || exit 2
 
+# Single-instance guard: two schedulers fire this canary at the same minute (the
+# launchd agent at 11:37 local AND the operator's paw-cron "37 11 * * *"). Concurrent
+# runs race on the npm/npx cache and the git index lock and can hang past the cron's
+# 600s cap (seen 2026-10-29 and 2026-11-10); a lone run is ~25s. Take an atomic lock
+# on first entry so the second concurrent run exits cleanly with no page. Steal a lock
+# older than 15 min — a run killed at the 600s cap can't run its cleanup trap. The lock
+# is HELD across the self-update re-exec: the re-exec carries CANARY_SELF_UPDATED, so
+# it neither re-takes nor (via exec, which skips the trap) releases it early.
+LOCK="$HOME/.vibeos-mcp/canary.lock"
+if [ -z "${CANARY_SELF_UPDATED:-}" ]; then
+  if ! mkdir "$LOCK" 2>/dev/null; then
+    if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +15 2>/dev/null)" ]; then
+      rmdir "$LOCK" 2>/dev/null; mkdir "$LOCK" 2>/dev/null || exit 0
+    else
+      exit 0  # another run is in progress
+    fi
+  fi
+fi
+trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+
 # Self-update (once per run): the launchd job runs this script straight from the dev
 # checkout, so a merged canary fix would otherwise sit unused until a manual pull
 # (beads-tavc.17). Fast-forward main to origin/main when it is SAFE — only on a clean
@@ -29,12 +49,16 @@ if [ -z "${CANARY_SELF_UPDATED:-}" ] && [ -z "${CANARY_RELAY:-}" ] && [ "${CANAR
     # GIT_TERMINAL_PROMPT=0 blocks credential prompts. A hang here would stall the
     # whole canary (the operator's paw-cron caps a run at 600s).
     GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10' \
-      git fetch -q origin main 2>/dev/null && git merge --ff-only -q origin/main 2>/dev/null || true
+      /opt/homebrew/bin/timeout 30 git fetch -q origin main 2>/dev/null \
+      && git merge --ff-only -q origin/main 2>/dev/null || true
   fi
   exec /bin/bash "$0" "$@"
 fi
 
-OUT=$(/opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
+# Hard-bound the probe (a lone probe is ~25s; its own deadlines sum to <90s). A kill
+# at 150s surfaces as a non-zero exit the retry/alert path handles, so a true hang
+# pages instead of silently burning the cron's 600s cap.
+OUT=$(/opt/homebrew/bin/timeout 150 /opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
 
 # Both pages so far were transient one-offs that cleared on a manual rerun minutes
 # later with the relay Lambda clean (0 errors/throttles, concurrency ~2): 2026-10-22
@@ -47,7 +71,7 @@ OUT=$(/opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
 # it is NOT retried: a run that trips it pages on the first failure.
 if [ "$CODE" -ne 0 ] && printf '%s' "$OUT" | grep -q 'pair probe:' && ! printf '%s' "$OUT" | grep -q 'error rate elevated'; then
   sleep "${CANARY_RETRY_DELAY:-30}"
-  RETRY=$(/opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
+  RETRY=$(/opt/homebrew/bin/timeout 150 /opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
   OUT=$(printf '%s\n--- transient pair-probe failure; retried after %ss ---\n%s' "$OUT" "${CANARY_RETRY_DELAY:-30}" "$RETRY")
 fi
 
