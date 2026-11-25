@@ -29,6 +29,8 @@ INVOKER=$(ps -o comm= -p "$PPID" 2>/dev/null | sed 's#^.*/##' | tr -d ' '); : "$
 # is HELD across the self-update re-exec: the re-exec carries CANARY_SELF_UPDATED, so
 # it neither re-takes nor (via exec, which skips the trap) releases it early.
 LOCK="$HOME/.vibeos-mcp/canary.lock"
+RUNFLAG="$HOME/.vibeos-mcp/canary.running.$$"   # $$ is stable across the self-update exec
+WDPIDFILE="$HOME/.vibeos-mcp/canary.watchdog.$$"
 if [ -z "${CANARY_SELF_UPDATED:-}" ]; then
   if ! mkdir "$LOCK" 2>/dev/null; then
     if [ -n "$(find "$LOCK" -maxdepth 0 -mmin +15 2>/dev/null)" ]; then
@@ -40,7 +42,36 @@ if [ -z "${CANARY_SELF_UPDATED:-}" ]; then
     fi
   fi
 fi
-trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+# Final-process cleanup: release the lock, stop the watchdog, drop the runflag. The
+# original process re-execs (below) WITHOUT firing this trap, so RUNFLAG survives the
+# hand-off to the re-exec'd process, which clears it here on a clean exit.
+trap 'rmdir "$LOCK" 2>/dev/null; [ -f "$WDPIDFILE" ] && kill "$(cat "$WDPIDFILE" 2>/dev/null)" 2>/dev/null; rm -f "$RUNFLAG" "$WDPIDFILE"' EXIT
+
+# Watchdog (beads-tavc.17.1 / tavc.62): the operator's paw-cron kills a run at 600s and
+# that kill is SILENT — no page — and a silent canary is worse than a flaky one (ceo
+# 2026-11-25). The hard -k timeouts below cap a run at ~240s worst case, so this only
+# trips on an unforeseen hang. Spawned ONCE in the original process (guarded like the
+# lock) so it survives the self-update re-exec; it keys off RUNFLAG (not a PID that the
+# re-exec'd shell has lost), so a clean run — which clears RUNFLAG via the trap — never
+# pages. Past budget it pages ceo directly and kills the stuck process before 600s.
+if [ -z "${CANARY_SELF_UPDATED:-}" ]; then
+  : > "$RUNFLAG"
+  MAINPID=$$
+  # The TERM trap is how the final process stops a still-sleeping watchdog on a CLEAN
+  # exit: it reaps the sleep and exits 0 WITHOUT firing, so a normal run never pages and
+  # leaves no orphan sleep. The watchdog only pages/kills when its sleep elapses on its
+  # own — i.e. the run genuinely outlived the budget.
+  ( SLEEP_CHILD=""
+    trap 'kill "$SLEEP_CHILD" 2>/dev/null; exit 0' TERM
+    sleep "${CANARY_WATCHDOG_S:-540}" & SLEEP_CHILD=$!
+    wait "$SLEEP_CHILD" 2>/dev/null
+    [ -e "$RUNFLAG" ] || exit 0  # defensive: run finished -> stay silent
+    printf '[%s] WATCHDOG: run exceeded budget, paging + killing (via %s)\n' "$(date -u +%FT%TZ)" "$INVOKER" >> "$LOG"
+    paw dm vibeos-ceo "🚨 vibeos MCP relay canary run exceeded its time budget and was about to be killed silently by the 600s cron cap — the probe or self-update hung. (beads-tavc.17)" >> "$LOG" 2>&1
+    kill -TERM "$MAINPID" 2>/dev/null; sleep 5; kill -KILL "$MAINPID" 2>/dev/null
+  ) &
+  echo $! > "$WDPIDFILE"
+fi
 
 # Self-update (once per run): the launchd job runs this script straight from the dev
 # checkout, so a merged canary fix would otherwise sit unused until a manual pull
@@ -53,20 +84,23 @@ if [ -z "${CANARY_SELF_UPDATED:-}" ] && [ -z "${CANARY_RELAY:-}" ] && [ "${CANAR
   export CANARY_SELF_UPDATED=1
   if BR=$(git symbolic-ref --short -q HEAD) && [ "$BR" = "main" ] \
      && git diff --quiet && git diff --cached --quiet; then
-    # fail fast, never prompt/hang: BatchMode + ConnectTimeout bound the ssh dial,
-    # GIT_TERMINAL_PROMPT=0 blocks credential prompts. A hang here would stall the
-    # whole canary (the operator's paw-cron caps a run at 600s).
-    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10' \
-      /opt/homebrew/bin/timeout 30 git fetch -q origin main 2>/dev/null \
+    # fail fast, never prompt/hang: BatchMode + ConnectTimeout bound the ssh DIAL, but
+    # NOT a stalled transfer once connected — ServerAliveInterval/CountMax drops a dead
+    # transfer in ~10s, and 'timeout -k 10 20' SIGKILLs anything that ignores SIGTERM
+    # (the likely home of the 11-25 557s hang; plain 'timeout 30' sends only TERM, which
+    # a stalled ssh can ignore). GIT_TERMINAL_PROMPT=0 blocks credential prompts.
+    GIT_TERMINAL_PROMPT=0 GIT_SSH_COMMAND='ssh -o BatchMode=yes -o ConnectTimeout=10 -o ServerAliveInterval=5 -o ServerAliveCountMax=2' \
+      /opt/homebrew/bin/timeout -k 10 20 git fetch -q origin main 2>/dev/null \
       && git merge --ff-only -q origin/main 2>/dev/null || true
   fi
   exec /bin/bash "$0" "$@"
 fi
 
-# Hard-bound the probe (a lone probe is ~25s; its own deadlines sum to <90s). A kill
-# at 150s surfaces as a non-zero exit the retry/alert path handles, so a true hang
-# pages instead of silently burning the cron's 600s cap.
-OUT=$(/opt/homebrew/bin/timeout 150 /opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
+# Hard-bound the probe (a lone probe is ~25s; its own deadlines sum to <90s). 'timeout
+# -k 10 80' SIGTERMs at 80s and SIGKILLs at 90s, surfacing as a non-zero exit the
+# retry/alert path handles. Budget: fetch 30 + probe 90 + retry 30 + probe 90 = 240s
+# worst case, well under the operator paw-cron's 600s cap (beads-tavc.17.1).
+OUT=$(/opt/homebrew/bin/timeout -k 10 80 /opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
 
 # Both pages so far were transient one-offs that cleared on a manual rerun minutes
 # later with the relay Lambda clean (0 errors/throttles, concurrency ~2): 2026-10-22
@@ -79,7 +113,7 @@ OUT=$(/opt/homebrew/bin/timeout 150 /opt/homebrew/bin/node canary/relay-canary.m
 # it is NOT retried: a run that trips it pages on the first failure.
 if [ "$CODE" -ne 0 ] && printf '%s' "$OUT" | grep -q 'pair probe:' && ! printf '%s' "$OUT" | grep -q 'error rate elevated'; then
   sleep "${CANARY_RETRY_DELAY:-30}"
-  RETRY=$(/opt/homebrew/bin/timeout 150 /opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
+  RETRY=$(/opt/homebrew/bin/timeout -k 10 80 /opt/homebrew/bin/node canary/relay-canary.mjs 2>&1); CODE=$?
   OUT=$(printf '%s\n--- transient pair-probe failure; retried after %ss ---\n%s' "$OUT" "${CANARY_RETRY_DELAY:-30}" "$RETRY")
 fi
 
