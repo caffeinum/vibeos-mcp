@@ -20,6 +20,18 @@ cd "$REPO" || exit 2
 START=$(date +%s)
 INVOKER=$(ps -o comm= -p "$PPID" 2>/dev/null | sed 's#^.*/##' | tr -d ' '); : "${INVOKER:=?}"
 
+# Hold off idle sleep while we run (beads-5idg). On battery the laptop deep-sleeps
+# through the 11:37 fire window and only DarkWakes ~16s; the cron fire then starts this
+# script but the machine re-sleeps and freezes it mid-probe, so the paw-cron's 600s
+# wall-clock cap SIGKILLs it (seen 2026-11-27: lock/runflag/watchdog left behind, no log,
+# no page). 'caffeinate -i -w $$' asserts PreventUserIdleSystemSleep for as long as THIS
+# script's pid lives ($$ is stable across the self-update exec), so a DarkWake fire can
+# finish its ~8s instead of freezing. It exits on its own when the script does (-w), so no
+# cleanup is needed. Spawned once (guarded like the lock) so the re-exec doesn't double it.
+if [ -z "${CANARY_SELF_UPDATED:-}" ] && command -v caffeinate >/dev/null 2>&1; then
+  caffeinate -i -w $$ &
+fi
+
 # Single-instance guard: two schedulers fire this canary at the same minute (the
 # launchd agent at 11:37 local AND the operator's paw-cron "37 11 * * *"). Concurrent
 # runs race on the npm/npx cache and the git index lock and can hang past the cron's
